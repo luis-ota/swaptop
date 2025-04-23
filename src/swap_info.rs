@@ -39,29 +39,26 @@ pub fn get_processes_using_swap() -> Result<Vec<ProcessSwapInfo>, SwapDataError>
         match process_result {
             Ok(process) => {
             	let pid = process.pid;
-            	match process.status(){
-            		Ok(status) => {
-                        if let Some(swap_kb) = status.vmswap {
-                            if swap_kb > 0 {
-                                let name = match process.stat() {
-                                    Ok(stat) => stat.comm,
-                                    Err(_) => {
-                                        "unknown".to_string()
-                                    }
-                                };
+            	if let Ok(status) = process.status() {
+                         if let Some(swap_kb) = status.vmswap {
+                             if swap_kb > 0 {
+                                 let name = match process.stat() {
+                                     Ok(stat) => stat.comm,
+                                     Err(_) => {
+                                         "unknown".to_string()
+                                     }
+                                 };
 
-                                let info = ProcessSwapInfo {
-                                    pid,
-                                    name,
-                                    swap_kb,
-                                };
-                                swap_processes.push(info);
-                            }
-                        }
-            			
-            		}
-            		Err(_) => {}
-            	}
+                                 let info = ProcessSwapInfo {
+                                     pid,
+                                     name,
+                                     swap_kb,
+                                 };
+                                 swap_processes.push(info);
+                             }
+                         }
+             			
+             		}
             },
             Err(e) => {
                 println!("{:?}", e);

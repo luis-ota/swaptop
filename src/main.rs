@@ -1,6 +1,6 @@
 mod swap_info;
 
-use swap_info::{get_processes_using_swap, ProcessSwapInfo, SwapDataError};
+use swap_info::get_processes_using_swap;
 
 fn main() {
    match get_processes_using_swap(){
@@ -10,7 +10,7 @@ fn main() {
    		}
    	}
    	Err(e) => {
-   		println!("{}", e);
+        println!("{:?}", e);
    	}
    }
 }
