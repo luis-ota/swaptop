@@ -1,5 +1,6 @@
 use thiserror::Error;
 use procfs;
+use procfs::Meminfo;
 
 #[derive(Debug, Clone)]
 pub struct ProcessSwapInfo {
@@ -12,6 +13,7 @@ pub struct ProcessSwapInfo {
 pub struct SwapUpdate {
     pub aggregated: Vec<ProcessSwapInfo>, 
     pub total_swap: u64,
+    pub used_swap: u64,
 }
 
 #[derive(Debug, Error)]
@@ -23,7 +25,6 @@ pub enum SwapDataError {
 }
 
 #[derive(Debug, Clone)]
-
 pub struct AggregatedSwapInfo {
     pub name: String,           
     pub total_swap_kb: u64,     
@@ -67,6 +68,17 @@ pub fn get_processes_using_swap() -> Result<Vec<ProcessSwapInfo>, SwapDataError>
     }
     
     Ok(swap_processes)
+}
+
+pub fn chart_info() -> Result<SwapUpdate, SwapDataError> {
+	let swap_info = get_processes_using_swap()?;
+	let mut tatal_swap;
+	let meminfo = Meminfo::new()?;
+	
+	let update_swap = SwapUpdate{
+		
+	}
+	
 }
 
 // pub fn get_aggregated_swap_info() -> Result<Vec<AggregatedSwapInfo>, SwapDataError>{
