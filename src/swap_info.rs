@@ -1,5 +1,5 @@
 use thiserror::Error;
-use procfs;
+use procfs::{self, Current};
 use procfs::Meminfo;
 
 #[derive(Debug, Clone)]
@@ -10,6 +10,7 @@ pub struct ProcessSwapInfo {
 }
 
 #[derive(Debug, Clone)]
+
 pub struct SwapUpdate {
     pub aggregated: Vec<ProcessSwapInfo>, 
     pub total_swap: u64,
@@ -22,14 +23,6 @@ pub enum SwapDataError {
     Procfs(#[from] procfs::ProcError),
     #[error("I/O error accessing /proc: {0}")]
     Io(#[from] std::io::Error),
-}
-
-#[derive(Debug, Clone)]
-pub struct AggregatedSwapInfo {
-    pub name: String,           
-    pub total_swap_kb: u64,     
-    pub pids: Vec<i32>,        
-    pub process_count: usize, 
 }
 
 
@@ -71,28 +64,17 @@ pub fn get_processes_using_swap() -> Result<Vec<ProcessSwapInfo>, SwapDataError>
 }
 
 pub fn chart_info() -> Result<SwapUpdate, SwapDataError> {
-	let swap_info = get_processes_using_swap()?;
-	let mut tatal_swap;
-	let meminfo = Meminfo::new()?;
-	
-	let update_swap = SwapUpdate{
-		
-	}
-	
-}
+    let process_swap_details = get_processes_using_swap()?;
+    
+    let meminfo = Meminfo::current()?;
+    
+    let total_swap_kb = meminfo.swap_total;
+    let free_swap_kb = meminfo.swap_free;
+    let used_swap_kb = total_swap_kb.saturating_sub(free_swap_kb);
 
-// pub fn get_aggregated_swap_info() -> Result<Vec<AggregatedSwapInfo>, SwapDataError>{
-// 	let aggregated_swap_ps = Vec::new();
-// 	
-// 	match get_aggregated_swap_info(){
-// 		Ok(processes) => {
-// 		let mapped_ps = HashMap::new();
-// 
-// 		
-// 			
-// 		}
-// 		Err(e) => {
-// 			println!("{}", e);
-// 		}
-// 	}
-// }
+    Ok(SwapUpdate {
+        aggregated: process_swap_details,
+        total_swap: total_swap_kb,
+        used_swap: used_swap_kb,
+    })
+}
