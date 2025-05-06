@@ -1,6 +1,6 @@
 mod swap_info;
 
-use swap_info::{get_processes_using_swap, chart_info};
+use swap_info::{get_processes_using_swap, chart_info, SizeUnits};
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
@@ -27,6 +27,7 @@ pub struct App {
     running: bool,
     pub vertical_scroll_state: ScrollbarState,
     pub vertical_scroll: usize,
+    pub swap_size_unit: crate::SizeUnits,
 }
 
 impl App {
@@ -36,6 +37,7 @@ impl App {
             running: false,
             vertical_scroll_state: ScrollbarState::default(),
             vertical_scroll: 0,
+            swap_size_unit: SizeUnits::KB,
         }
     }
 
@@ -80,7 +82,12 @@ impl App {
         let process_lines = self.create_process_lines();
         self.vertical_scroll_state = self.vertical_scroll_state.content_length(process_lines.len());
 
-        // Bottom frame with title "Process"
+        // Bottom frame with title "Process" with unit selection buttons
+        let unit_buttons = match self.swap_size_unit {
+            SizeUnits::KB => "▶KB◀─MB─GB",
+            SizeUnits::MB => "KB─▶MB◀─GB",
+            SizeUnits::GB => "KB─MB─▶GB◀",
+        };
         let bottom_block = Block::bordered()
             .title("Process (j/k or ▲/▼ to scroll)")
             .title_alignment(Alignment::Right);
@@ -159,9 +166,9 @@ impl App {
             "SWAP (KB)".bold()
         ]));
 
-        if let Ok(mut processes) = get_processes_using_swap() {
+        if let Ok(mut processes) = get_processes_using_swap(self.swap_size_unit.clone()) {
             // Sort processes by swap usage (highest first)
-            processes.sort_by(|a, b| b.swap_kb.cmp(&a.swap_kb));
+            processes.sort_by(|a, b| b.swap_size.cmp(&a.swap_size));
 
             for process in processes {
                 lines.push(Line::from(vec![
@@ -169,7 +176,7 @@ impl App {
                     " | ".into(),
                     format!("{:15}", process.name).into(),
                     " | ".into(),
-                    format!("{:10}", process.swap_kb).into()
+                    format!("{:10}", process.swap_size).into()
                 ]));
             }
         }

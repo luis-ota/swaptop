@@ -6,7 +6,7 @@ use procfs::Meminfo;
 pub struct ProcessSwapInfo {
     pub pid: i32,
     pub name: String,
-    pub swap_kb: u64,
+    pub swap_size: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -15,6 +15,14 @@ pub struct SwapUpdate {
     pub aggregated: Vec<ProcessSwapInfo>, 
     pub total_swap: u64,
     pub used_swap: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum SizeUnits {
+    #[default]
+    KB,
+    MB,
+    GB
 }
 
 #[derive(Debug, Error)]
@@ -26,7 +34,7 @@ pub enum SwapDataError {
 }
 
 
-pub fn get_processes_using_swap() -> Result<Vec<ProcessSwapInfo>, SwapDataError> {
+pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>, SwapDataError> {
     let mut swap_processes = Vec::new();
 
     for process_result in procfs::process::all_processes()? {
@@ -42,11 +50,11 @@ pub fn get_processes_using_swap() -> Result<Vec<ProcessSwapInfo>, SwapDataError>
                                          "unknown".to_string()
                                      }
                                  };
-
+                                 let swap_size = convert_swap(swap_kb, unit.clone());
                                  let info = ProcessSwapInfo {
                                      pid,
                                      name,
-                                     swap_kb,
+                                     swap_size,
                                  };
                                  swap_processes.push(info);
                              }
@@ -64,7 +72,7 @@ pub fn get_processes_using_swap() -> Result<Vec<ProcessSwapInfo>, SwapDataError>
 }
 
 pub fn chart_info() -> Result<SwapUpdate, SwapDataError> {
-    let process_swap_details = get_processes_using_swap()?;
+    let process_swap_details = get_processes_using_swap(SizeUnits::KB)?;
     
     let meminfo = Meminfo::current()?;
     
@@ -77,4 +85,12 @@ pub fn chart_info() -> Result<SwapUpdate, SwapDataError> {
         total_swap: total_swap_kb,
         used_swap: used_swap_kb,
     })
+}
+
+fn convert_swap(kb: u64, unit: SizeUnits) -> u64 {
+    match unit {
+        SizeUnits::MB => kb / 1024,
+        SizeUnits::GB => kb / (1024 * 1024),
+        SizeUnits::KB => kb, // default is KB
+    }
 }
