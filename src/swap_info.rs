@@ -55,11 +55,11 @@ pub fn get_processes_using_swap() -> Result<Vec<ProcessSwapInfo>, SwapDataError>
              		}
             },
             Err(e) => {
-                println!("{:?}", e);
+                // println!("{:?}", e);
             }
         }
     }
-    
+
     Ok(swap_processes)
 }
 
