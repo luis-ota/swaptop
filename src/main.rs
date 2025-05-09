@@ -1,16 +1,19 @@
 mod swap_info;
 
-use swap_info::{get_processes_using_swap, chart_info, SizeUnits};
+use std::time::{Duration, Instant};
+use swap_info::{get_processes_using_swap, get_chart_info, SizeUnits};
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
-    style::Stylize,
+    style::{Color, Modifier, Style, Stylize},
     text::{Line},
-    widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,BorderType,Borders},
+    symbols::Marker,
+    widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,BorderType,Borders,Axis, Chart, Dataset, GraphType, LegendPosition},
 	layout::{Alignment, Constraint, Direction, Layout, Rect},
 
 };
+use crate::swap_info::SwapUpdate;
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -20,46 +23,67 @@ fn main() -> color_eyre::Result<()> {
     result
 }
 
-/// The main application which holds the state and logic of the application.
+const DATASET_STYLE: Style = Style::new()
+    .fg(Color::Yellow)
+    .add_modifier(Modifier::BOLD);
+
 #[derive(Debug, Default)]
 pub struct App {
-    /// Is the application running?
     running: bool,
     pub vertical_scroll_state: ScrollbarState,
     pub vertical_scroll: usize,
     pub swap_size_unit: crate::SizeUnits,
+    pub swap_processes_lines: Vec<Line<'static>>,
+    pub last_update: Option<Instant>,
+    pub chart_info: SwapUpdate,
+    history_data: Vec<(f64, f64)>,
 }
 
 impl App {
-    /// Construct a new instance of [`App`].
     pub fn new() -> Self {
         Self {
             running: false,
             vertical_scroll_state: ScrollbarState::default(),
             vertical_scroll: 0,
             swap_size_unit: SizeUnits::KB,
+            swap_processes_lines: Vec::new(),
+            last_update: None,
+            chart_info: SwapUpdate::default(),
+            history_data: Vec::new()
         }
     }
 
-    /// Run the application's main loop.
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
+        self.swap_processes_lines = self.create_process_lines();
+        self.chart_info = get_chart_info()?;
+        self.last_update = Some(Instant::now());
+
         while self.running {
             terminal.draw(|frame| self.render(frame))?;
-            self.handle_crossterm_events()?;
+
+            if event::poll(Duration::from_millis(100))? {
+                self.handle_crossterm_events()?;
+            }
+
+            if let Some(last_update) = self.last_update {
+                if last_update.elapsed() >= Duration::from_secs(2) {
+                    self.swap_processes_lines = self.create_process_lines();
+                    self.chart_info = get_chart_info()?;
+
+                    self.last_update = Some(Instant::now());
+                }
+            }
         }
         Ok(())
     }
 
-    /// Renders the user interface.
     fn render(&mut self, frame: &mut Frame) {
-        // Create the main block with title "SwapTop"
         let main_block = Block::bordered()
             .border_type(BorderType::Rounded)
             .title("SwapTop")
             .title_alignment(Alignment::Left);
 
-        // Split the main area into two parts: top and bottom
         let main_area = main_block.inner(frame.area());
 
         let chunks = Layout::default()
@@ -67,58 +91,17 @@ impl App {
             .constraints([Constraint::Percentage(35), Constraint::Percentage(65)].as_ref())
             .split(main_area);
 
-        // Top frame with title "Chart"
-        let top_block = Block::bordered()
-            .borders(Borders::NONE)
-            .title("Chart")
-            .title_alignment(Alignment::Right);
-        let top_text = "Chart content goes here"; // Replace with your actual chart content
-        frame.render_widget(
-            Paragraph::new(top_text).block(top_block),
-            chunks[0]
-        );
+        self.render_animated_chart(frame, chunks[0]);
+        self.render_processes_list(frame, chunks[1]);
 
-        // Process list with scrolling functionality
-        let process_lines = self.create_process_lines();
-        self.vertical_scroll_state = self.vertical_scroll_state.content_length(process_lines.len());
-
-        // Bottom frame with title "Process" with unit selection buttons
-        let unit_buttons = match self.swap_size_unit {
-            SizeUnits::KB => "▶KB◀─MB─GB",
-            SizeUnits::MB => "KB─▶MB◀─GB",
-            SizeUnits::GB => "KB─MB─▶GB◀",
-        };
-        let bottom_block = Block::bordered()
-            .title("Process (j/k or ▲/▼ to scroll)")
-            .title_alignment(Alignment::Right);
-
-        // Render the scrollable process list
-        let process_paragraph = Paragraph::new(process_lines)
-            .block(bottom_block)
-            .scroll((self.vertical_scroll as u16, 0));
-
-        frame.render_widget(process_paragraph, chunks[1]);
-
-        // Render the scrollbar
-        frame.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .begin_symbol(Some("↑"))
-                .end_symbol(Some("↓")),
-            chunks[1],
-            &mut self.vertical_scroll_state,
-        );
-
-        // Render the main block (this must be done last)
+        
         frame.render_widget(main_block, frame.area());
+        
     }
 
-    /// Reads the crossterm events and updates the state of [`App`].
-    ///
-    /// If your application needs to perform work in between handling events, you can use the
-    /// [`event::poll`] function to check if there are any events available with a timeout.
+
     fn handle_crossterm_events(&mut self) -> Result<()> {
         match event::read()? {
-            // it's important to check KeyEventKind::Press to avoid handling key release events
             Event::Key(key) if key.kind == KeyEventKind::Press => self.on_key_event(key),
             Event::Mouse(_) => {}
             Event::Resize(_, _) => {}
@@ -127,7 +110,6 @@ impl App {
         Ok(())
     }
 
-    /// Handles the key events and updates the state of [`App`].
     fn on_key_event(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
             return;
@@ -149,7 +131,6 @@ impl App {
         }
     }
 
-    /// Set running to false to quit the application.
     fn quit(&mut self) {
         self.running = false;
     }
@@ -157,24 +138,21 @@ impl App {
     fn create_process_lines(&self) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
 
-        // Add header line
         lines.push(Line::from(vec![
-            "PID".bold(),
+            format!("{:12}", "    PID").bold(),
             " | ".into(),
-            "PROCESS".bold(),
+            format!("{:30}", "PROCESS").bold(),
             " | ".into(),
-            "SWAP (KB)".bold()
-        ]));
+            format!("{:10}", "USED").bold()        ]));
 
         if let Ok(mut processes) = get_processes_using_swap(self.swap_size_unit.clone()) {
-            // Sort processes by swap usage (highest first)
             processes.sort_by(|a, b| b.swap_size.cmp(&a.swap_size));
 
             for process in processes {
                 lines.push(Line::from(vec![
-                    format!("{:6}", process.pid).into(),
+                    format!("{:12}", process.pid).into(),
                     " | ".into(),
-                    format!("{:15}", process.name).into(),
+                    format!("{:30}", process.name).into(),
                     " | ".into(),
                     format!("{:10}", process.swap_size).into()
                 ]));
@@ -182,6 +160,72 @@ impl App {
         }
 
         lines
+    }
+
+    fn render_animated_chart(&mut self, frame: &mut Frame, area: Rect) {
+        const MAX_DATA_POINTS: usize = 200;
+        
+    
+        
+        if self.history_data.len() >= MAX_DATA_POINTS {
+            self.history_data.remove(0);
+        }
+
+        let current_time = self.history_data.len() as f64;
+        self.history_data.push((-current_time, self.chart_info.used_swap as f64));
+
+        let max_x = current_time.max(MAX_DATA_POINTS as f64);
+        let max_y = self.history_data.iter()
+            .map(|&(_, y)| y)
+            .fold(0.0, f64::max)
+            .max(1.0);
+
+        let datasets = vec![Dataset::default()
+            .marker(Marker::Braille)
+            .style(DATASET_STYLE)
+            .graph_type(GraphType::Line)
+            .data(&self.history_data)];
+
+        let chart = Chart::new(datasets)
+            .block(Block::bordered())
+            .x_axis(
+                Axis::default()
+                    .bounds([-max_x, 0.0])
+                    .style(Style::default().fg(Color::Gray))
+            )
+            .y_axis(
+                Axis::default()
+                    .bounds([0.0, max_y * 1.1])
+                    .style(Style::default().fg(Color::Gray))
+            );
+
+        frame.render_widget(chart, area);
+    }
+    fn render_processes_list(&mut self, frame: &mut Frame, area: Rect) {
+        self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.swap_processes_lines.len());
+
+        let unit_buttons = match self.swap_size_unit {
+            SizeUnits::KB => "▶KB◀─MB─GB",
+            SizeUnits::MB => "KB─▶MB◀─GB",
+            SizeUnits::GB => "KB─MB─▶GB◀",
+        };
+        let bottom_block = Block::bordered()
+            .title("Process (j/k or ▲/▼ to scroll)")
+            .title_alignment(Alignment::Right);
+
+        let process_paragraph = Paragraph::new(self.swap_processes_lines.clone())
+            .block(bottom_block)
+            .scroll((self.vertical_scroll as u16, 0));
+
+        frame.render_widget(process_paragraph, area);
+
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓")),
+            area,
+            &mut self.vertical_scroll_state,
+        );
     }
 }
 

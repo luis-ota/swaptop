@@ -9,7 +9,7 @@ pub struct ProcessSwapInfo {
     pub swap_size: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 
 pub struct SwapUpdate {
     pub aggregated: Vec<ProcessSwapInfo>, 
@@ -71,14 +71,13 @@ pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>,
     Ok(swap_processes)
 }
 
-pub fn chart_info() -> Result<SwapUpdate, SwapDataError> {
+pub fn get_chart_info() -> Result<SwapUpdate, SwapDataError> {
     let process_swap_details = get_processes_using_swap(SizeUnits::KB)?;
     
     let meminfo = Meminfo::current()?;
     
     let total_swap_kb = meminfo.swap_total;
-    let free_swap_kb = meminfo.swap_free;
-    let used_swap_kb = total_swap_kb.saturating_sub(free_swap_kb);
+    let used_swap_kb = total_swap_kb.saturating_sub(meminfo.swap_free.clone());
 
     Ok(SwapUpdate {
         aggregated: process_swap_details,
@@ -91,6 +90,6 @@ fn convert_swap(kb: u64, unit: SizeUnits) -> u64 {
     match unit {
         SizeUnits::MB => kb / 1024,
         SizeUnits::GB => kb / (1024 * 1024),
-        SizeUnits::KB => kb, // default is KB
+        SizeUnits::KB => kb, 
     }
 }
