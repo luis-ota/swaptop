@@ -36,9 +36,11 @@
         pub swap_processes_lines: Vec<Line<'static>>,
         pub last_update: Option<Instant>,
         pub chart_info: SwapUpdate,
-        history_data: Vec<(f64, f64)>,
         pub aggregated: bool,
         current_theme: ThemeType,
+        time_window: [f64; 2],
+        chart_data: Vec<(f64, f64)>,
+        timeout: u64
     }
 
     impl App {
@@ -51,9 +53,11 @@
                 swap_processes_lines: Vec::new(),
                 last_update: None,
                 chart_info: SwapUpdate::default(),
-                history_data: Vec::new(),
                 aggregated: false,
                 current_theme: ThemeType::Dracula,
+                time_window: [0.0, 60.0],
+                chart_data: Vec::new(),
+                timeout: 1000
             }
         }
 
@@ -71,10 +75,10 @@
                 }
 
                 if let Some(last_update) = self.last_update {
-                    if last_update.elapsed() >= Duration::from_secs(1) {
+                    if last_update.elapsed() >= Duration::from_millis(self.timeout) {
+                        self.update_chart_data();
                         self.swap_processes_lines = self.create_process_lines(self.aggregated);
                         self.chart_info = get_chart_info()?;
-
                         self.last_update = Some(Instant::now());
                     }
                 }
@@ -90,6 +94,7 @@
                 .border_style(Style::default().fg(theme.border))
                 .title(Line::from(" swaptop ").bold().fg(theme.primary).left_aligned())
                 .title(Line::from(format!("theme (t to change): {:?}", self.current_theme)).bold().fg(theme.primary).right_aligned())
+                .title(Line::from(format!(" < {:?}ms > ", self.timeout)).bold().fg(theme.primary).centered())
                 .style(Style::default().bg(theme.background).fg(theme.text));
 
             let main_area = main_block.inner(frame.area());
@@ -105,6 +110,16 @@
             frame.render_widget(main_block, frame.area());
         }
 
+        fn update_chart_data(&mut self) {
+            let timestamp = self.time_window[1];
+            let swap_usage = self.chart_info.used_swap as f64;
+            self.chart_data.push((timestamp, swap_usage));
+            if self.chart_data.len() > 60 {
+                self.chart_data.drain(0..1);
+            }
+            self.time_window[0] += 1.0;
+            self.time_window[1] += 1.0;
+        }
 
         fn handle_crossterm_events(&mut self) -> Result<()> {
             match event::read()? {
@@ -121,7 +136,7 @@
                 return;
             }
 
-            match key.code {  // Changed from (key.modifiers, key.code)
+            match key.code { 
                 // quit
                 KeyCode::Esc | KeyCode::Char('q') => self.quit(),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit(),
@@ -147,6 +162,9 @@
                 // change theme
                 KeyCode::Char('t') => self.cycle_theme(),
 
+                // change timeout
+                KeyCode::Left | KeyCode::Right => self.change_timout(key.code),
+
                 _ => {}
             }
         }
@@ -159,6 +177,18 @@
                 ThemeType::Nord => ThemeType::Default,
             };
             self.swap_processes_lines = self.create_process_lines(self.aggregated);
+        }
+
+        fn change_timout(&mut self, action: KeyCode){
+            match action {
+                KeyCode::Left => {
+                    self.timeout = self.timeout.saturating_sub(100).max(1);
+                },
+                KeyCode::Right => {
+                    self.timeout = self.timeout.saturating_add(100).min(10000);
+                },
+                _ => {  }
+            }
         }
         fn quit(&mut self) {
             self.running = false;
@@ -204,7 +234,6 @@
         }
 
         fn render_animated_chart(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
-
             let total = convert_swap(self.chart_info.total_swap, self.swap_size_unit.clone());
             let used = convert_swap(self.chart_info.used_swap, self.swap_size_unit.clone());
 
@@ -215,35 +244,30 @@
             };
 
             let swap_usage_percent = self.chart_info.used_swap as f64 / self.chart_info.total_swap as f64 * 100.0;
-            // Create the dataset for the chart
             let datasets = vec![Dataset::default()
-                .marker(Marker::Dot)
+                .marker(Marker::Braille)
                 .style(Style::default().fg(theme.primary))
                 .graph_type(GraphType::Line)
-                .data(&self.history_data)];
+                .data(&self.chart_data)];
 
             let chart = Chart::new(datasets)
                 .block(Block::bordered()
-                    .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(theme.border))
-                           .title(Line::from(format!("swap usage {}%", swap_usage_percent.round() as u64))
-                               .fg(theme.primary).bold().right_aligned())
-                           .title(Line::from(total_used_title).fg(theme.text).left_aligned())
-                    
-                           
+                    .title(Line::from(format!("swap usage {}%", swap_usage_percent.round() as u64))
+                        .fg(theme.primary).bold().right_aligned())
+                    .title(Line::from(total_used_title).fg(theme.text).left_aligned())
+                    .border_style(Style::default().fg(theme.border))
+                    .style(Style::default().bg(theme.background))
                 )
-                .x_axis(
-                    Axis::default()
-                        .style(Style::default().fg(theme.text)),
-                )
-                .y_axis(
-                    Axis::default()
-                        .style(Style::default().fg(theme.text)),
-                );
+                .x_axis(Axis::default()
+                    .style(Style::default().fg(theme.text))
+                    .bounds(self.time_window))
+                .y_axis(Axis::default()
+                    .style(Style::default().fg(theme.text))
+                    .bounds([0.0, self.chart_info.total_swap as f64]));
 
             frame.render_widget(chart, area);
         }
-
         fn render_processes_list(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
             let unit_buttons = match self.swap_size_unit {
                 SizeUnits::KB => "▶KB◀─MB─GB",
