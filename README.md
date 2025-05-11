@@ -1,8 +1,8 @@
 # Swaptop
+A real-time swap usage monitor for Linux systems with TUI interface. Lists processes using swap, displays consumption per-process/per-software, and provides live-updating graphs.
 
 ![Swaptop Demo](docs/chart-demo.gif)
 
-A real-time swap usage monitor for Linux systems with TUI interface. Lists processes using swap, displays consumption per-process/per-software, and provides live-updating graphs.
 
 ## Features
 
@@ -19,6 +19,15 @@ A real-time swap usage monitor for Linux systems with TUI interface. Lists proce
 - Rust (latest stable)
 - Linux kernel 4.4+
 - procfs mounted at `/proc`
+
+## Quick Install
+
+```bash
+# Download and install latest release
+wget https://github.com/luis-ota/swaptop/releases/latest/download/swaptop-linux-x86_64.tar.gz
+tar xzvf swaptop-linux-x86_64.tar.gz
+./install.sh
+```
 
 ### From Source
 ```bash
@@ -90,7 +99,7 @@ sudo -E swaptop
 
 ## License 
 
-MIT License - © 2025 Luis Ota
+MIT License - © 2025 luis
 
 ---
 

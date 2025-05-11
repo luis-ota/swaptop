@@ -136,7 +136,7 @@
                 return;
             }
 
-            match key.code { 
+            match key.code {
                 // quit
                 KeyCode::Esc | KeyCode::Char('q') => self.quit(),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit(),
@@ -252,6 +252,7 @@
 
             let chart = Chart::new(datasets)
                 .block(Block::bordered()
+                    .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(theme.border))
                     .title(Line::from(format!("swap usage {}%", swap_usage_percent.round() as u64))
                         .fg(theme.primary).bold().right_aligned())
