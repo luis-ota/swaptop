@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use thiserror::Error;
 use procfs::{self, Current};
 use procfs::Meminfo;
@@ -6,7 +7,7 @@ use procfs::Meminfo;
 pub struct ProcessSwapInfo {
     pub pid: i32,
     pub name: String,
-    pub swap_size: u64,
+    pub swap_size: f64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -62,8 +63,8 @@ pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>,
              			
              		}
             },
-            Err(e) => {
-                // println!("{:?}", e);
+            Err(_) => {
+                
             }
         }
     }
@@ -76,8 +77,8 @@ pub fn get_chart_info() -> Result<SwapUpdate, SwapDataError> {
     
     let meminfo = Meminfo::current()?;
     
-    let total_swap_kb = meminfo.swap_total;
-    let used_swap_kb = total_swap_kb.saturating_sub(meminfo.swap_free.clone());
+    let total_swap_kb = meminfo.swap_total / 1024;
+    let used_swap_kb = meminfo.swap_total.saturating_sub(meminfo.swap_free) / 1024;
 
     Ok(SwapUpdate {
         aggregated: process_swap_details,
@@ -86,10 +87,36 @@ pub fn get_chart_info() -> Result<SwapUpdate, SwapDataError> {
     })
 }
 
-fn convert_swap(kb: u64, unit: SizeUnits) -> u64 {
+pub fn convert_swap(kb: u64, unit: SizeUnits) -> f64 {
     match unit {
-        SizeUnits::MB => kb / 1024,
-        SizeUnits::GB => kb / (1024 * 1024),
-        SizeUnits::KB => kb, 
+        SizeUnits::KB => kb as f64,
+        SizeUnits::MB => kb as f64 / 1024.0,
+        SizeUnits::GB => kb as f64 / (1024.0 * 1024.0),
     }
+}
+
+pub fn aggregate_processes(processes: Vec<ProcessSwapInfo>) -> Vec<ProcessSwapInfo> {
+    let mut name_to_info: HashMap<String, (f64, i32)> = HashMap::new();
+
+    for process in processes {
+        let entry = name_to_info.entry(process.name).or_insert((0.0, 0));
+        entry.0 += process.swap_size;
+        entry.1 += 1;
+    }
+
+    let mut aggregated_processes: Vec<ProcessSwapInfo> = name_to_info
+        .into_iter()
+        .map(|(name, (swap_size, count))| ProcessSwapInfo {
+            pid: count,  
+            name,
+            swap_size,
+        })
+        .collect();
+
+    aggregated_processes.sort_by(|a, b| {
+        b.swap_size
+            .partial_cmp(&a.swap_size)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    aggregated_processes
 }
