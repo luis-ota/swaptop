@@ -1,55 +1,100 @@
 # Swaptop
 
-Swaptop is a real-time swap usage monitor for Linux systems. It lists processes currently using swap, displays how much swap each process is consuming, and provides a live-updating graph of total swap usage. You can collapse processes belonging to the same software to view their combined swap usage.
+![Swaptop Demo](docs/chart-demo.gif)
 
----
+A real-time swap usage monitor for Linux systems with TUI interface. Lists processes using swap, displays consumption per-process/per-software, and provides live-updating graphs.
 
 ## Features
 
-- **Real-time swap usage graph**
-- **List of processes using swap**
-- **Per-process and per-software swap usage**
-- **Collapse/expand view for grouped processes**
-- **Intuitive terminal interface**
+- Real-time animated swap usage graph
+- Process-level swap consumption tracking
+- Grouped view by software (aggregate mode)
+- Multiple color themes (Dracula, Solarized, Monokai, Nord)
+- Unit conversion (KB/MB/GB)
+- Lightweight (<5MB memory usage)
 
-## Getting Started
+## Installation
 
 ### Prerequisites
+- Rust (latest stable)
+- Linux kernel 4.4+
+- procfs mounted at `/proc`
 
-- [Rust](https://www.rust-lang.org/tools/install) (latest stable version)
-- Linux operating system
-
-### Running Swaptop
-
-Clone the repository and run with Cargo:
-
+### From Source
 ```bash
 git clone https://github.com/luis-ota/swaptop.git
 cd swaptop
-cargo run
+cargo install --path .
 ```
 
-### Building Release Binary
+## Usage 
 
+### Basic Launch
 ```bash
-cargo build --release
-./target/release/swaptop
+swaptop
 ```
 
-## Usage
+### Keyboard Controls
 
-- Launch the application in your terminal.
-- View the real-time swap usage graph.
-- Expand or collapse process groups to analyze swap usage by software.
+| Key         | Action                       |
+|-------------|------------------------------|
+| `q`/`Esc`   | Quit application             |
+| `k`/`m`/`g` | Switch units (KB/MB/GB)      |
+| `a`         | Toggle aggregate mode        |
+| `t`         | Cycle through themes         |
+| `↑`/`u`     | Scroll up                    |
+| `↓`/`d`     | Scroll down                  |
+| `Ctrl+C`    | Force quit                   |
+| `< / >`     | Decrease / Increase interval |
 
-## License
+![Swaptop unit Demo](docs/unit-change.gif)
 
-This project is licensed under the MIT License.
+## Themes
+
+Cycle through 5 beautiful themes:
+1. Dracula (default)
+2. Solarized
+3. Monokai
+4. Nord
+5. Default
+
+![Swaptop theme Demo](docs/theme-demo.gif)
+
+## Technical Details
+
+### Data Collection
+- Reads `/proc/meminfo` for system swap stats
+- Parses `/proc/[pid]/status` for per-process swap
+- Uses procfs crate for safe access
+
+### Performance
+- Updates every 1 second by default
+- <1% CPU usage on modern systems
+- Memory footprint: ~4MB
+
+Press `t` to cycle themes live.
+
+## Troubleshooting
+
+**No swap data showing?**
+- Ensure you have active swap partitions/files
+```bash
+swapon --show
+```
+
+**Permission issues?**
+Run with:
+```bash
+sudo -E swaptop
+```
+
+## License 
+
+MIT License - © 2025 Luis Ota
 
 ---
 
-*“No matter where you go, everyone's connected.”*  
-
+no matter where you go, everyone's connected
 
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡤⢤⣤⣤⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣶⣧⣐⠍⢙⣀⣼⣿⣿⣅⡐⠆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
