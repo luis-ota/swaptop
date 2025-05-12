@@ -3,6 +3,7 @@ A real-time swap usage monitor for Linux systems with TUI interface. Lists proce
 
 ![Swaptop Demo](docs/chart-demo.gif)
 
+Blog post about it: https://luis-ota.github.io/luis-blog/posts/swaptop
 
 ## Features
 
