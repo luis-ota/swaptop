@@ -20,14 +20,6 @@ A real-time swap usage monitor for Linux systems with TUI interface. Lists proce
 - Linux kernel 4.4+
 - procfs mounted at `/proc`
 
-## Quick Install
-
-```bash
-# Download and install latest release
-wget https://github.com/luis-ota/swaptop/releases/latest/download/swaptop-linux-x86_64.tar.gz
-tar xzvf swaptop-linux-x86_64.tar.gz
-./install.sh
-```
 
 ### From Source
 ```bash
