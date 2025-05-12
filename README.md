@@ -16,7 +16,7 @@ A real-time swap usage monitor for Linux systems with TUI interface. Lists proce
 ## Installation
 
 ### Prerequisites
-- Rust (latest stable)
+- [Rust (latest stable)](https://rustup.rs/)
 - Linux kernel 4.4+
 - procfs mounted at `/proc`
 
@@ -59,6 +59,8 @@ Cycle through 5 beautiful themes:
 4. Nord
 5. Default
 
+Press `t` to cycle themes live.
+
 ![Swaptop theme Demo](docs/theme-demo.gif)
 
 ## Technical Details
@@ -73,7 +75,6 @@ Cycle through 5 beautiful themes:
 - <1% CPU usage on modern systems
 - Memory footprint: ~4MB
 
-Press `t` to cycle themes live.
 
 ## Troubleshooting
 
