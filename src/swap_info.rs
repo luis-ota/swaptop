@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use thiserror::Error;
 use std::io;
 
-#[cfg(feature = "linux_support")]
+#[cfg(feature = "linux")]
 use procfs::{self, Current};
-#[cfg(feature = "linux_support")]
+#[cfg(feature = "linux")]
 use procfs::Meminfo;
 
 #[cfg(feature = "windows_support")]

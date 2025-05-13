@@ -29,7 +29,7 @@ A real-time swap usage monitor for Linux systems with TUI interface. Lists proce
 ```bash
 git clone https://github.com/luis-ota/swaptop.git
 cd swaptop
-cargo install --path . --features linux_support
+cargo install --path . --features linux
 ```
 
 ## Usage 

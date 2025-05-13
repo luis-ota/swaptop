@@ -6,7 +6,7 @@ authors = ["Luis Otavio <luotasss@gmail.com>"]
 
 [features]
 default = []
-linux_support = ["procfs"]
+linux = ["procfs"]
 windows_support = ["tasklist", "sysinfo", "winapi"]
 
 [dependencies]
