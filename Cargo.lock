@@ -909,6 +909,7 @@ dependencies = [
  "sysinfo",
  "tasklist",
  "thiserror",
+ "winapi",
 ]
 
 [[package]]

@@ -99,7 +99,7 @@ pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>,
                     let info = ProcessSwapInfo{
                         pid: task.pid,
                         name: task.pname,
-                        swap_size: convert_swap(meminfo.get_pagefile_usage() as u64, unit.clone())
+                        swap_size: convert_swap(meminfo.get_pagefile_usage() as u64 /1024, unit.clone())
                     };
                     profile_page_processes.push(info);
                 }
@@ -128,17 +128,31 @@ pub fn get_chart_info() -> Result<SwapUpdate, SwapDataError> {
 
 #[cfg(target_os = "windows")]
 pub fn get_chart_info() -> Result<SwapUpdate, SwapDataError> {
+    use winapi::um::sysinfoapi::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    use std::mem::MaybeUninit;
 
-    let mut sys = System::new();
-    sys.refresh_memory();
+    unsafe {
+        let mut mem_status = MaybeUninit::<MEMORYSTATUSEX>::zeroed();
+        mem_status.as_mut_ptr().write(MEMORYSTATUSEX {
+            dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+            ..Default::default()
+        });
 
-    let total_swap_kb = sys.total_swap() / 1024;
-    let used_swap_kb = sys.used_swap() / 1024;
+        if GlobalMemoryStatusEx(mem_status.as_mut_ptr()) == 0 {
+            return Err(SwapDataError::Io(std::io::Error::last_os_error()));
+        }
 
-    Ok(SwapUpdate {
-        total_swap: total_swap_kb,
-        used_swap: used_swap_kb,
-    })
+        let mem_status = mem_status.assume_init();
+
+        // Page file values are in bytes, convert to KB
+        let total_swap = mem_status.ullTotalPageFile / 1024;
+        let used_swap = (mem_status.ullTotalPageFile - mem_status.ullAvailPageFile) / 1024;
+
+        Ok(SwapUpdate {
+            total_swap: total_swap as u64,
+            used_swap: used_swap as u64,
+        })
+    }
 }
 
 pub fn convert_swap(kb: u64, unit: SizeUnits) -> f64 {
