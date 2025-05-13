@@ -1,6 +1,6 @@
     mod swap_info;
     mod theme;
-
+    
     use std::time::{Duration, Instant};
     use swap_info::{get_processes_using_swap, get_chart_info, SizeUnits};
     use color_eyre::Result;

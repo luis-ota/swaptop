@@ -1,11 +1,19 @@
 use std::collections::HashMap;
 use thiserror::Error;
+use std::io;
+
+#[cfg(feature = "linux_support")]
 use procfs::{self, Current};
+#[cfg(feature = "linux_support")]
 use procfs::Meminfo;
+
+#[cfg(feature = "windows_support")]
+use sysinfo::System;
+
 
 #[derive(Debug, Clone)]
 pub struct ProcessSwapInfo {
-    pub pid: i32,
+    pub pid: u32,
     pub name: String,
     pub swap_size: f64,
 }
@@ -13,7 +21,6 @@ pub struct ProcessSwapInfo {
 #[derive(Debug, Clone, Default)]
 
 pub struct SwapUpdate {
-    pub aggregated: Vec<ProcessSwapInfo>, 
     pub total_swap: u64,
     pub used_swap: u64,
 }
@@ -26,6 +33,7 @@ pub enum SizeUnits {
     GB
 }
 
+#[cfg(target_os = "linux")]
 #[derive(Debug, Error)]
 pub enum SwapDataError {
     #[error("Procfs error: {0}")]
@@ -34,7 +42,14 @@ pub enum SwapDataError {
     Io(#[from] std::io::Error),
 }
 
+#[cfg(target_os = "windows")]
+#[derive(Debug, Error)]
+pub enum SwapDataError {
+    #[error("I/O error accessing system information: {0}")]
+    Io(#[from] io::Error),
+}
 
+#[cfg(target_os = "linux")]
 pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>, SwapDataError> {
     let mut swap_processes = Vec::new();
 
@@ -53,7 +68,7 @@ pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>,
                                  };
                                  let swap_size = convert_swap(swap_kb, unit.clone());
                                  let info = ProcessSwapInfo {
-                                     pid,
+                                     pid: pid as u32,
                                      name,
                                      swap_size,
                                  };
@@ -72,16 +87,55 @@ pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>,
     Ok(swap_processes)
 }
 
+#[cfg(target_os = "windows")]
+pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>, SwapDataError> {
+    let mut profile_page_processes = Vec::new();
+
+        match tasklist::Tasklist::new() {
+            Ok(tasks) => {
+                for task in tasks{
+                    let meminfo = task.get_memory_info();
+
+                    let info = ProcessSwapInfo{
+                        pid: task.pid,
+                        name: task.pname,
+                        swap_size: convert_swap(meminfo.get_pagefile_usage() as u64, unit.clone())
+                    };
+                    profile_page_processes.push(info);
+                }
+
+            }
+            Err(_) => {
+            }
+        
+    }
+
+    Ok(profile_page_processes)
+}
+
+#[cfg(target_os = "linux")]
 pub fn get_chart_info() -> Result<SwapUpdate, SwapDataError> {
-    let process_swap_details = get_processes_using_swap(SizeUnits::KB)?;
-    
     let meminfo = Meminfo::current()?;
     
     let total_swap_kb = meminfo.swap_total / 1024;
     let used_swap_kb = meminfo.swap_total.saturating_sub(meminfo.swap_free) / 1024;
 
     Ok(SwapUpdate {
-        aggregated: process_swap_details,
+        total_swap: total_swap_kb,
+        used_swap: used_swap_kb,
+    })
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_chart_info() -> Result<SwapUpdate, SwapDataError> {
+
+    let mut sys = System::new();
+    sys.refresh_memory();
+
+    let total_swap_kb = sys.total_swap() / 1024;
+    let used_swap_kb = sys.used_swap() / 1024;
+
+    Ok(SwapUpdate {
         total_swap: total_swap_kb,
         used_swap: used_swap_kb,
     })
@@ -96,7 +150,7 @@ pub fn convert_swap(kb: u64, unit: SizeUnits) -> f64 {
 }
 
 pub fn aggregate_processes(processes: Vec<ProcessSwapInfo>) -> Vec<ProcessSwapInfo> {
-    let mut name_to_info: HashMap<String, (f64, i32)> = HashMap::new();
+    let mut name_to_info: HashMap<String, (f64, u32)> = HashMap::new();
 
     for process in processes {
         let entry = name_to_info.entry(process.name).or_insert((0.0, 0));
