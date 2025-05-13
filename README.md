@@ -52,7 +52,7 @@ swaptop
 | `Ctrl+C`    | Force quit                   |
 | `< / >`     | Decrease / Increase interval |
 
-![Swaptop unit Demo](docs/unit-change.gif)
+![Swaptop unit Demo](docs/unit-ch.gif)
 
 ## Themes
 
