@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -10,15 +12,15 @@ jobs:
     strategy:
       matrix:
         include:
-          # Linux build: use Musl + linux feature
+          # Linux build (Musl + linux feature)
           - target: x86_64-unknown-linux-musl
             features: linux
 
-
-          # Windows build: use GNU + windows_support feature + nightly toolchain
+          # Windows build (GNU + windows_support feature + nightly toolchain)
           - target: x86_64-pc-windows-gnu
             features: windows_support
             toolchain: nightly
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
