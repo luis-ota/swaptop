@@ -35,7 +35,7 @@ cargo install --path . --features linux
 
 ### Windows
 - Acess: https://github.com/luis-ota/swaptop/releases
-- Download the windowd verison
+- Download the windows verison
 - Extract it
 - Execute the .exe or call it from a terminal 
 
