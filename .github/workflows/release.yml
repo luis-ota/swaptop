@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
+    tags: ['v*']
   workflow_dispatch:
-
 
 jobs:
   release:
@@ -11,10 +11,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            flags: "--features linux"
+          # Linux build: use Musl + linux feature
+          - target: x86_64-unknown-linux-musl
+            features: linux
+
+
+          # Windows build: use GNU + windows_support feature + nightly toolchain
           - target: x86_64-pc-windows-gnu
-            flags: "--features windows_support"
+            features: windows_support
+            toolchain: nightly
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,12 +28,10 @@ jobs:
         uses: rust-build/rust-build.action@v1.4.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EXTRA_COMMAND_FLAGS: ${{ matrix.flags }}
         with:
           RUSTTARGET: ${{ matrix.target }}
-          ARCHIVE_TYPES: "tar.gz zip"
+          ARCHIVE_TYPES: "zip tar.gz"
           MINIFY: "true"
-          BIN_NAME: "swaptop"
-          RELEASE_NAME: "Release ${{ github.ref_name }}"
-          RELEASE_BODY: "Automated release for ${{ github.ref_name }}"
           EXTRA_FILES: "README.md LICENSE"
+          FEATURES: ${{ matrix.features }}
+          TOOLCHAIN_VERSION: ${{ matrix.toolchain || 'stable' }}
