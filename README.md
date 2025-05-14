@@ -1,5 +1,5 @@
 # Swaptop
-A real-time swap usage monitor for Linux systems with TUI interface. Lists processes using swap, displays consumption per-process/per-software, and provides live-updating graphs.
+A real-time swap usage monitor for Linux and Windows systems with TUI interface. Lists processes using swap, displays consumption per-process/per-software, and provides live-updating graphs.
 
 ![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fluis-ota%2Fswaptop&label=views&icon=github&color=%23cfe2ff)
 
@@ -19,6 +19,7 @@ A real-time swap usage monitor for Linux systems with TUI interface. Lists proce
 
 ## Installation
 
+### Linux
 ### Prerequisites
 - [Rust (latest stable)](https://rustup.rs/)
 - Linux kernel 4.4+
@@ -31,6 +32,12 @@ git clone https://github.com/luis-ota/swaptop.git
 cd swaptop
 cargo install --path . --features linux
 ```
+
+### Windows
+- Acess: https://github.com/luis-ota/swaptop/releases
+- Download the windowd verison
+- Extract it
+- Execute the .exe or call it from a terminal 
 
 ## Usage 
 
