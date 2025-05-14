@@ -4,51 +4,33 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            flags: "--features linux"
+          - target: x86_64-pc-windows-gnu
+            flags: "--features windows_support"
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - name: Build
-        run: cargo build --release
-
-      - name: Strip binary
-        run: strip target/release/swaptop
-
-      - name: Create release archive
-        run: |
-          mkdir -p release
-          cp target/release/swaptop release/
-          cp install.sh release/
-          tar czvf swaptop-linux-x86_64.tar.gz -C release .
-
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
+      - name: Build and release Rust binary
+        uses: rust-build/rust-build.action@v1.4.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXTRA_COMMAND_FLAGS: ${{ matrix.flags }}
         with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Release ${{ github.ref_name }}
-          body: |
-            Automated release for ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./swaptop-linux-x86_64.tar.gz
-          asset_name: swaptop-linux-x86_64.tar.gz
-          asset_content_type: application/gzip
+          RUSTTARGET: ${{ matrix.target }}
+          ARCHIVE_TYPES: "tar.gz zip"
+          MINIFY: "true"
+          BIN_NAME: "swaptop"
+          RELEASE_NAME: "Release ${{ github.ref_name }}"
+          RELEASE_BODY: "Automated release for ${{ github.ref_name }}"
+          EXTRA_FILES: "README.md LICENSE"
