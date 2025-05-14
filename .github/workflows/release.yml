@@ -7,45 +7,45 @@ on:
   workflow_dispatch:
 
 jobs:
+  create_release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="autobuild-$(date +%s)"
+          gh release create "$tag" \
+            --title "Auto Release $tag" \
+            --notes "Automated release from push on ${{ github.ref_name }}" \
+            --latest
+    outputs:
+      tag: ${{ steps.set_tag.outputs.tag }}
+
   release:
+    needs: create_release
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
             features: linux
-            os_name: linux
           - target: x86_64-pc-windows-gnu
             features: windows_support
             toolchain: nightly
-            os_name: windows
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ matrix.toolchain || 'stable' }}
-          target: ${{ matrix.target }}
-          override: true
-
-      - name: Build binary
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Package binary
-        run: |
-          mkdir dist
-          cp target/${{ matrix.target }}/release/* dist/
-          cp README.md LICENSE dist/ || true
-          tar -czf ${{ matrix.os_name }}.tar.gz -C dist .
-
-      - name: Create GitHub Release and Upload Assets
+      - name: Build and upload Rust binary
+        uses: rust-build/rust-build.action@v1.4.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          RELEASE_NAME="autobuild-$(date +%Y%m%d%H%M%S)"
-          gh release create "$RELEASE_NAME" \
-            --title "Auto Release $RELEASE_NAME" \
-            --notes "Automated build from branch: ${{ github.ref_name }}" \
-            "${{ matrix.os_name }}.tar.gz"
+        with:
+          UPLOAD_MODE: release
+          RUSTTARGET: ${{ matrix.target }}
+          FEATURES: ${{ matrix.features }}
+          TOOLCHAIN_VERSION: ${{ matrix.toolchain || 'stable' }}
+          ARCHIVE_TYPES: "zip tar.gz"
+          EXTRA_FILES: "README.md LICENSE"
+
