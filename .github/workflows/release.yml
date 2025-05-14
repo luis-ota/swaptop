@@ -1,105 +1,147 @@
-name: Build and Release Rust App
+name: Build and Release Rust App (Cross-Compile)
 
 on:
   push:
     tags:
-      - 'v*'  # Trigger on tags like v1.0.0, v0.2.3
+      - 'v*.*.*' # Trigger on tags like v1.0.0, v0.2.3, etc.
+
+env:
+  CARGO_TERM_COLOR: always # Ensure colors are used in Cargo output
 
 jobs:
-  build_assets:
-    name: Build for ${{ matrix.asset_suffix }}
-    runs-on: ubuntu-latest
+  build:
+    name: Build for ${{ matrix.target_os }}
+    runs-on: ubuntu-latest # All builds, including cross-compilation, run on Ubuntu
     strategy:
       matrix:
         include:
-          - target: x86_64-unknown-linux-musl
-            features: linux                # Your feature flag for Linux builds
-            asset_suffix: linux-musl
-          - target: x86_64-pc-windows-gnu
-            features: windows_support      # Your feature flag for Windows builds
-            toolchain: nightly
-            asset_suffix: windows-gnu
+          - target_os: linux
+            # rust_target: (not needed for native cargo build on Linux runner)
+            features: linux
+            output_artifact_suffix: linux-amd64
+            binary_name_suffix: "" # Linux binaries usually don't have an extension
+            archive_format: tar.gz
+          - target_os: windows
+            rust_target: x86_64-pc-windows-gnu
+            features: windows_support
+            output_artifact_suffix: windows-amd64
+            binary_name_suffix: ".exe" # Windows executables typically end with .exe
+            archive_format: zip
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Compile and Create Archives with rust-build
-        id: compile_archives
-        uses: rust-build/rust-build.action@v1.4.5
-        # GITHUB_TOKEN is not strictly needed here if we manually upload artifacts later,
-        # but the action might still expect it for some operations.
-        # env:
-        #   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          RUSTTARGET: ${{ matrix.target }}
-          FEATURES: ${{ matrix.features || '' }} # Pass features; defaults to empty if not specified
-          TOOLCHAIN_VERSION: ${{ matrix.toolchain || 'stable' }} # rust-build might use this
-          ARCHIVE_TYPES: "zip tar.gz"  # Instructs rust-build to create both archive types
-          EXTRA_FILES: "README.md LICENSE"
-          # This action should create files like <repo_name>-<RUSTTARGET>.zip and <repo_name>-<RUSTTARGET>.tar.gz
-          # in the root of the workspace.
+          # toolchain: stable # You can specify stable, nightly, beta, or a specific version
+          components: rustfmt, clippy # Optional: for linting/formatting checks
 
-      - name: Prepare Artifact Details
-        id: artifact_details
+      - name: Install cross-rs (for Windows cross-compilation)
+        if: matrix.target_os == 'windows'
+        uses: taiki-e/install-action@cross # Action to easily install cross-rs
+
+      - name: Install jq (for parsing Cargo.toml metadata)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Get Crate Name
+        id: get_crate_name
+        # This command extracts the crate name from Cargo.toml
+        run: |
+          CRATE_NAME=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.manifest_path | contains("Cargo.toml")) | .name')
+          echo "Determined Crate Name: ${CRATE_NAME}"
+          echo "CRATE_NAME=${CRATE_NAME}" >> $GITHUB_ENV # Set for subsequent steps in this job
+          echo "crate_name_output=${CRATE_NAME}" >> $GITHUB_OUTPUT # Set as an output for other jobs/steps if needed
+
+      - name: Build for Linux (native)
+        if: matrix.target_os == 'linux'
+        run: cargo build --release --features ${{ matrix.features }}
+        env:
+          RUSTFLAGS: -C strip=symbols # Optional: reduces binary size by stripping debug symbols
+
+      - name: Build for Windows (cross-compile)
+        if: matrix.target_os == 'windows'
+        run: cross build --release --target ${{ matrix.rust_target }} --features ${{ matrix.features }}
+        env:
+          RUSTFLAGS: -C strip=symbols # Optional: reduces binary size
+
+      - name: Determine Binary Path and Archive Name
+        id: binary_info
         shell: bash
         run: |
-          REPO_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
-          VERSION_TAG="${{ github.ref_name }}"
+          # Use the CRATE_NAME from the environment variable set in the "Get Crate Name" step
+          # GITHUB_REF_NAME is the tag, e.g., v1.0.0
+          ARCHIVE_BASENAME="${CRATE_NAME}-${{ github.ref_name }}-${{ matrix.output_artifact_suffix }}"
 
-        
-          FILE_STEM="${REPO_NAME}-${{ matrix.target }}"
-          ZIP_FILE_NAME="${FILE_STEM}.zip"
-          TAR_GZ_FILE_NAME="${FILE_STEM}.tar.gz"
-
-          
-          UPLOAD_ZIP_ARTIFACT_NAME="${REPO_NAME}-${VERSION_TAG}-${{ matrix.asset_suffix }}.zip"
-          UPLOAD_TAR_GZ_ARTIFACT_NAME="${REPO_NAME}-${VERSION_TAG}-${{ matrix.asset_suffix }}.tar.gz"
-
-          echo "Generated files should be: ${ZIP_FILE_NAME} and ${TAR_GZ_FILE_NAME}"
-          echo "Current directory listing:"
-          ls -lh .
-
-          if [[ -f "${ZIP_FILE_NAME}" ]]; then
-            echo "zip_file_path=${ZIP_FILE_NAME}" >> $GITHUB_OUTPUT
-            echo "zip_upload_name=${UPLOAD_ZIP_ARTIFACT_NAME}" >> $GITHUB_OUTPUT
-            echo "Found ${ZIP_FILE_NAME}"
-          else
-            echo "::warning file=${{ github.workflow }},line=$(caller  | awk '{print $1}')"::"${ZIP_FILE_NAME} not found. Check rust-build output."
+          if [[ "${{ matrix.target_os }}" == "linux" ]]; then
+            BINARY_PATH="target/release/${CRATE_NAME}${matrix.binary_name_suffix}"
+          elif [[ "${{ matrix.target_os }}" == "windows" ]]; then
+            BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}${matrix.binary_name_suffix}"
           fi
 
-          if [[ -f "${TAR_GZ_FILE_NAME}" ]]; then
-            echo "tar_gz_file_path=${TAR_GZ_FILE_NAME}" >> $GITHUB_OUTPUT
-            echo "tar_gz_upload_name=${UPLOAD_TAR_GZ_ARTIFACT_NAME}" >> $GITHUB_OUTPUT
-            echo "Found ${TAR_GZ_FILE_NAME}"
-          else
-            echo "::warning file=${{ github.workflow }},line=$(caller  | awk '{print $1}')"::"${TAR_GZ_FILE_NAME} not found. Check rust-build output."
+          echo "Binary Path: ${BINARY_PATH}"
+          echo "Archive Basename: ${ARCHIVE_BASENAME}"
+
+          echo "binary_path_output=${BINARY_PATH}" >> $GITHUB_OUTPUT
+          echo "archive_basename_output=${ARCHIVE_BASENAME}" >> $GITHUB_OUTPUT
+
+
+      - name: Archive binary and extra files
+        shell: bash
+        run: |
+          BINARY_PATH="${{ steps.binary_info.outputs.binary_path_output }}"
+          ARCHIVE_BASENAME="${{ steps.binary_info.outputs.archive_basename_output }}"
+          STAGING_DIR="staging_dir_for_archive" # Temporary directory for archive contents
+
+          mkdir -p "${STAGING_DIR}"
+          cp "${BINARY_PATH}" "${STAGING_DIR}/${CRATE_NAME}${matrix.binary_name_suffix}"
+
+          # Optionally include README and LICENSE in the archive
+          # The `2>/dev/null || true` part ensures the step doesn't fail if these files don't exist
+          cp README.md LICENSE "${STAGING_DIR}/" 2>/dev/null || true
+
+          FINAL_ARCHIVE_NAME=""
+          if [[ "${{ matrix.archive_format }}" == "tar.gz" ]]; then
+            FINAL_ARCHIVE_NAME="${ARCHIVE_BASENAME}.tar.gz"
+            tar -czvf "${FINAL_ARCHIVE_NAME}" -C "${STAGING_DIR}" .
+          elif [[ "${{ matrix.archive_format }}" == "zip" ]]; then
+            FINAL_ARCHIVE_NAME="${ARCHIVE_BASENAME}.zip"
+            sudo apt-get update && sudo apt-get install -y zip # Ensure zip utility is available
+            (cd "${STAGING_DIR}" && zip -r "../${FINAL_ARCHIVE_NAME}" .)
           fi
 
-      - name: Upload ZIP Artifact
-        if: steps.artifact_details.outputs.zip_file_path
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.artifact_details.outputs.zip_upload_name }}
-          path: ${{ steps.artifact_details.outputs.zip_file_path }}
-          if-no-files-found: error # Fail if the file isn't found (it should be, due to the 'if' condition)
+          echo "Created archive: ${FINAL_ARCHIVE_NAME}"
+          ls -lh "${FINAL_ARCHIVE_NAME}"
+          # Set the path of the created archive for the upload step
+          echo "ARCHIVE_FILE_PATH=${FINAL_ARCHIVE_NAME}" >> $GITHUB_ENV
 
-      - name: Upload TAR.GZ Artifact
-        if: steps.artifact_details.outputs.tar_gz_file_path
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.artifact_details.outputs.tar_gz_upload_name }}
-          path: ${{ steps.artifact_details.outputs.tar_gz_file_path }}
-          if-no-files-found: error
+          # Artifact name will be like 'linux-build-mycrate-v1.0.0'
+          name: ${{ matrix.target_os }}-build-${{ env.CRATE_NAME }}-${{ github.ref_name }}
+          path: ${{ env.ARCHIVE_FILE_PATH }} # Path to the archive created in the previous step
+          if-no-files-found: error # Fail the workflow if the archive isn't found
 
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: build_assets # Ensure all build jobs are complete
+    needs: build # This job runs only after all matrix jobs in 'build' are successful
     permissions:
       contents: write # Required to create releases and upload assets to them
     steps:
-      - name: Checkout code (optional, if you want to include files like CHANGELOG.md from the repo)
+      - name: Checkout code (optional, if you need files from the repo for the release, e.g., CHANGELOG.md)
         uses: actions/checkout@v4
+
+      # If CRATE_NAME is needed for release title/body and not passed from build job
+      - name: Install jq (for parsing Cargo.toml metadata)
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Get Crate Name for Release
+        id: get_crate_name_release
+        run: |
+          CRATE_NAME=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.manifest_path | contains("Cargo.toml")) | .name')
+          echo "CRATE_NAME_RELEASE=${CRATE_NAME}" >> $GITHUB_ENV
+          echo "crate_name_output=${CRATE_NAME}" >> $GITHUB_OUTPUT
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
@@ -107,31 +149,32 @@ jobs:
           path: release-assets # All artifacts will be downloaded into subdirectories within 'release-assets'
 
       - name: List downloaded files (for debugging)
-        shell: bash
         run: |
           echo "Listing downloaded artifacts in release-assets/:"
           ls -R release-assets
           echo "Preparing file list for release..."
-          # The softprops/action-gh-release action expects a list of file paths.
           # This will find all files within the downloaded artifact directories.
           find release-assets -type f -print0 | xargs -0 -I {} echo {}
 
       - name: Create GitHub Release and Upload Assets
         uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is automatically provided by GitHub
         with:
           tag_name: ${{ github.ref_name }} # Uses the tag that triggered the workflow (e.g., v1.0.0)
-          name: Release ${{ github.ref_name }} # Names the release (e.g., Release v1.0.0)
-          # You can customize the release body. For example, point to a CHANGELOG:
-          # body_path: CHANGELOG.md
-          # Or write it directly:
-          body: |
-            Automated release of ${{ github.ref_name }}.
+          name: Release ${{ env.CRATE_NAME_RELEASE }} ${{ github.ref_name }} # Release title (e.g., Release my_crate v1.0.0)
+          body: | # You can customize the release body
+            Automated release of ${{ env.CRATE_NAME_RELEASE }} version ${{ github.ref_name }}.
 
-            **Assets:**
-            See the attached files for different platforms.
-          draft: false      # Set to true to create a draft release
-          prerelease: false # Set to true if this is a pre-release
+            Built from commit: ${{ github.sha }}
+            Commit message: ${{ github.event.head_commit.message }}
+
+            See attached assets for Linux and Windows.
+          # draft: false # Set to true to create a draft (unpublished) release
+          # prerelease: false # Set to true to identify the release as a pre-release
           files: |
             release-assets/*/*
+            # This glob pattern picks up all files within the subdirectories
+            # created by actions/download-artifact. For example:
+            # release-assets/linux-build-mycrate-v1.0.0/mycrate-v1.0.0-linux-amd64.tar.gz
+            # release-assets/windows-build-mycrate-v1.0.0/mycrate-v1.0.0-windows-amd64.zip
