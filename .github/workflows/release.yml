@@ -11,12 +11,11 @@ env:
 jobs:
   build:
     name: Build for ${{ matrix.target_os }}
-    runs-on: ubuntu-latest # All builds, including cross-compilation, run on Ubuntu
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - target_os: linux
-            # rust_target: (not needed for native cargo build on Linux runner)
             features: linux
             output_artifact_suffix: linux-amd64
             binary_name_suffix: "" # Linux binaries usually don't have an extension
@@ -25,7 +24,7 @@ jobs:
             rust_target: x86_64-pc-windows-gnu
             features: windows_support
             output_artifact_suffix: windows-amd64
-            binary_name_suffix: ".exe" # Windows executables typically end with .exe
+            binary_name_suffix: ".exe"
             archive_format: zip
     steps:
       - name: Checkout code
@@ -34,70 +33,116 @@ jobs:
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          # toolchain: stable # You can specify stable, nightly, beta, or a specific version
-          components: rustfmt, clippy # Optional: for linting/formatting checks
+          components: rustfmt, clippy
 
       - name: Install cross-rs (for Windows cross-compilation)
         if: matrix.target_os == 'windows'
-        uses: taiki-e/install-action@cross # Action to easily install cross-rs
+        uses: taiki-e/install-action@cross
 
       - name: Install jq (for parsing Cargo.toml metadata)
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Get Crate Name
+      - name: Get and Sanitize Crate Name
         id: get_crate_name
-        # This command extracts the crate name from Cargo.toml
         run: |
-          CRATE_NAME=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.manifest_path | contains("Cargo.toml")) | .name')
-          echo "Determined Crate Name: ${CRATE_NAME}"
-          echo "CRATE_NAME=${CRATE_NAME}" >> $GITHUB_ENV # Set for subsequent steps in this job
-          echo "crate_name_output=${CRATE_NAME}" >> $GITHUB_OUTPUT # Set as an output for other jobs/steps if needed
+          CRATE_NAME_RAW=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.manifest_path | contains("Cargo.toml")) | .name')
+          echo "Raw CRATE_NAME from jq: '${CRATE_NAME_RAW}'"
+          
+          # Sanitize CRATE_NAME to prevent characters that could break shell expansion
+          # Allows alphanumeric, underscore, hyphen.
+          CRATE_NAME_SANITIZED=$(echo "${CRATE_NAME_RAW}" | sed 's/[^a-zA-Z0-9_-]//g')
+          echo "Sanitized CRATE_NAME: '${CRATE_NAME_SANITIZED}'"
+          
+          if [[ -z "${CRATE_NAME_SANITIZED}" ]]; then
+            echo "::error::CRATE_NAME is empty after sanitization. Original from jq: '${CRATE_NAME_RAW}'"
+            exit 1
+          fi
+          
+          echo "CRATE_NAME=${CRATE_NAME_SANITIZED}" >> $GITHUB_ENV
+          echo "crate_name_output=${CRATE_NAME_SANITIZED}" >> $GITHUB_OUTPUT
 
       - name: Build for Linux (native)
         if: matrix.target_os == 'linux'
         run: cargo build --release --features ${{ matrix.features }}
         env:
-          RUSTFLAGS: -C strip=symbols # Optional: reduces binary size by stripping debug symbols
+          RUSTFLAGS: -C strip=symbols
 
       - name: Build for Windows (cross-compile)
         if: matrix.target_os == 'windows'
         run: cross build --release --target ${{ matrix.rust_target }} --features ${{ matrix.features }}
         env:
-          RUSTFLAGS: -C strip=symbols # Optional: reduces binary size
+          RUSTFLAGS: -C strip=symbols
 
       - name: Determine Binary Path and Archive Name
         id: binary_info
         shell: bash
         run: |
-          # Use the CRATE_NAME from the environment variable set in the "Get Crate Name" step
-          # GITHUB_REF_NAME is the tag, e.g., v1.0.0
+          # CRATE_NAME here comes from the GITHUB_ENV set in "Get and Sanitize Crate Name" step
+          echo "DEBUG: CRATE_NAME from env: '${CRATE_NAME}'"
+          echo "DEBUG: github.ref_name: '${{ github.ref_name }}'"
+          echo "DEBUG: matrix.output_artifact_suffix: '${{ matrix.output_artifact_suffix }}'"
+          echo "DEBUG: matrix.target_os: '${{ matrix.target_os }}'"
+          echo "DEBUG: matrix.binary_name_suffix (raw from matrix context): '${{ matrix.binary_name_suffix }}'"
+          echo "DEBUG: matrix.rust_target (raw from matrix context): '${{ matrix.rust_target }}'"
+
+          # Corrected ARCHIVE_BASENAME to use dynamic values
           ARCHIVE_BASENAME="${CRATE_NAME}-${{ github.ref_name }}-${{ matrix.output_artifact_suffix }}"
+          echo "Archive Basename: ${ARCHIVE_BASENAME}"
+
+          # Initialize BINARY_PATH to ensure it's set
+          BINARY_PATH="" 
 
           if [[ "${{ matrix.target_os }}" == "linux" ]]; then
-            BINARY_PATH="target/release/${CRATE_NAME}${matrix.binary_name_suffix}"
+            # This is the line that previously caused "bad substitution"
+            # Using CRATE_NAME from GITHUB_ENV, and matrix.binary_name_suffix (which is "" for linux)
+            # is substituted by Actions before bash sees it.
+            BINARY_PATH="target/release/${CRATE_NAME}${{ matrix.binary_name_suffix }}"
           elif [[ "${{ matrix.target_os }}" == "windows" ]]; then
-            BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}${matrix.binary_name_suffix}"
+            # Corrected Windows path to use matrix.rust_target
+            BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}${{ matrix.binary_name_suffix }}"
+          else
+            echo "::error::Unknown matrix.target_os: ${{ matrix.target_os }}"
+            exit 1
           fi
 
-          echo "Binary Path: ${BINARY_PATH}"
-          echo "Archive Basename: ${ARCHIVE_BASENAME}"
+          echo "Determined Binary Path: '${BINARY_PATH}'"
+          
+          if [[ -z "${BINARY_PATH}" ]]; then
+            echo "::error::BINARY_PATH is empty. This should not happen."
+            exit 1
+          fi
+          if [[ ! -f "${BINARY_PATH}" && "${{ matrix.target_os }}" == "windows" && -f "target/${{ matrix.rust_target }}/release/${CRATE_NAME}.exe" ]]; then
+             echo "::warning::Expected BINARY_PATH not found, but found .exe directly. Forcing .exe suffix."
+             BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}.exe" # Common fallback if suffix logic was off
+          elif [[ ! -f "${BINARY_PATH}" ]]; then
+             echo "::error::Binary file not found at expected path: ${BINARY_PATH}"
+             echo "Listing target directory contents:"
+             ls -R target/
+             exit 1
+          fi
 
           echo "binary_path_output=${BINARY_PATH}" >> $GITHUB_OUTPUT
           echo "archive_basename_output=${ARCHIVE_BASENAME}" >> $GITHUB_OUTPUT
-
 
       - name: Archive binary and extra files
         shell: bash
         run: |
           BINARY_PATH="${{ steps.binary_info.outputs.binary_path_output }}"
           ARCHIVE_BASENAME="${{ steps.binary_info.outputs.archive_basename_output }}"
-          STAGING_DIR="staging_dir_for_archive" # Temporary directory for archive contents
+          # CRATE_NAME is available from GITHUB_ENV
+          # matrix.binary_name_suffix is available via ${{ matrix.binary_name_suffix }}
+          
+          STAGING_DIR="staging_dir_for_archive" 
 
           mkdir -p "${STAGING_DIR}"
-          cp "${BINARY_PATH}" "${STAGING_DIR}/${CRATE_NAME}${matrix.binary_name_suffix}"
+          
+          # The actual filename of the binary after build
+          # For linux, matrix.binary_name_suffix is "", for windows it's ".exe"
+          COMPILED_BINARY_FILENAME="${CRATE_NAME}${{ matrix.binary_name_suffix }}"
+          
+          echo "Copying '${BINARY_PATH}' to '${STAGING_DIR}/${COMPILED_BINARY_FILENAME}'"
+          cp "${BINARY_PATH}" "${STAGING_DIR}/${COMPILED_BINARY_FILENAME}"
 
-          # Optionally include README and LICENSE in the archive
-          # The `2>/dev/null || true` part ensures the step doesn't fail if these files don't exist
           cp README.md LICENSE "${STAGING_DIR}/" 2>/dev/null || true
 
           FINAL_ARCHIVE_NAME=""
@@ -106,75 +151,75 @@ jobs:
             tar -czvf "${FINAL_ARCHIVE_NAME}" -C "${STAGING_DIR}" .
           elif [[ "${{ matrix.archive_format }}" == "zip" ]]; then
             FINAL_ARCHIVE_NAME="${ARCHIVE_BASENAME}.zip"
-            sudo apt-get update && sudo apt-get install -y zip # Ensure zip utility is available
+            # Ensure zip utility is available (it usually is on ubuntu-latest, but good practice)
+            if ! command -v zip &> /dev/null; then sudo apt-get update && sudo apt-get install -y zip; fi
             (cd "${STAGING_DIR}" && zip -r "../${FINAL_ARCHIVE_NAME}" .)
           fi
 
           echo "Created archive: ${FINAL_ARCHIVE_NAME}"
           ls -lh "${FINAL_ARCHIVE_NAME}"
-          # Set the path of the created archive for the upload step
           echo "ARCHIVE_FILE_PATH=${FINAL_ARCHIVE_NAME}" >> $GITHUB_ENV
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          # Artifact name will be like 'linux-build-mycrate-v1.0.0'
           name: ${{ matrix.target_os }}-build-${{ env.CRATE_NAME }}-${{ github.ref_name }}
-          path: ${{ env.ARCHIVE_FILE_PATH }} # Path to the archive created in the previous step
-          if-no-files-found: error # Fail the workflow if the archive isn't found
+          path: ${{ env.ARCHIVE_FILE_PATH }}
+          if-no-files-found: error
 
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: build # This job runs only after all matrix jobs in 'build' are successful
+    needs: build
     permissions:
-      contents: write # Required to create releases and upload assets to them
+      contents: write
     steps:
-      - name: Checkout code (optional, if you need files from the repo for the release, e.g., CHANGELOG.md)
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # If CRATE_NAME is needed for release title/body and not passed from build job
       - name: Install jq (for parsing Cargo.toml metadata)
+        if: env.CRATE_NAME_RELEASE == '' # Only if not already set (e.g. if build job outputs were not used)
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Get Crate Name for Release
         id: get_crate_name_release
+        # This step ensures CRATE_NAME_RELEASE is set, preferring build job's output if available
+        # but falling back to direct calculation if needed (though build job should set it)
         run: |
-          CRATE_NAME=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.manifest_path | contains("Cargo.toml")) | .name')
+          if [[ -n "${{ needs.build.outputs.crate_name_output }}" ]]; then
+             CRATE_NAME="${{ needs.build.outputs.crate_name_output }}"
+          else
+             CRATE_NAME=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.manifest_path | contains("Cargo.toml")) | .name' | sed 's/[^a-zA-Z0-9_-]//g')
+          fi
+          echo "Release Crate Name: '${CRATE_NAME}'"
           echo "CRATE_NAME_RELEASE=${CRATE_NAME}" >> $GITHUB_ENV
           echo "crate_name_output=${CRATE_NAME}" >> $GITHUB_OUTPUT
+
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          path: release-assets # All artifacts will be downloaded into subdirectories within 'release-assets'
+          path: release-assets
 
       - name: List downloaded files (for debugging)
         run: |
           echo "Listing downloaded artifacts in release-assets/:"
           ls -R release-assets
           echo "Preparing file list for release..."
-          # This will find all files within the downloaded artifact directories.
           find release-assets -type f -print0 | xargs -0 -I {} echo {}
 
       - name: Create GitHub Release and Upload Assets
         uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is automatically provided by GitHub
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_name }} # Uses the tag that triggered the workflow (e.g., v1.0.0)
-          name: Release ${{ env.CRATE_NAME_RELEASE }} ${{ github.ref_name }} # Release title (e.g., Release my_crate v1.0.0)
-          body: | # You can customize the release body
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ env.CRATE_NAME_RELEASE }} ${{ github.ref_name }}
+          body: |
             Automated release of ${{ env.CRATE_NAME_RELEASE }} version ${{ github.ref_name }}.
 
             Built from commit: ${{ github.sha }}
             Commit message: ${{ github.event.head_commit.message }}
 
             See attached assets for Linux and Windows.
-          # draft: false # Set to true to create a draft (unpublished) release
-          # prerelease: false # Set to true to identify the release as a pre-release
           files: |
             release-assets/*/*
-            # This glob pattern picks up all files within the subdirectories
-            # created by actions/download-artifact. For example:
-            # release-assets/linux-build-mycrate-v1.0.0/mycrate-v1.0.0-linux-amd64.tar.gz
-            # release-assets/windows-build-mycrate-v1.0.0/mycrate-v1.0.0-windows-amd64.zip
