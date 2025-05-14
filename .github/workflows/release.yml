@@ -1,38 +1,46 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [created]
   workflow_dispatch:
 
+
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create (empty) GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          tag_name: ${{ github.ref_name }}
+          # continue-on-error allows re-running without failure
+        continue-on-error: true
+
   release:
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          # Linux build (Musl + linux feature)
           - target: x86_64-unknown-linux-musl
             features: linux
-
-          # Windows build (GNU + windows_support feature + nightly toolchain)
           - target: x86_64-pc-windows-gnu
             features: windows_support
             toolchain: nightly
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Build and release Rust binary
+      - uses: actions/checkout@v4
+      - name: Build and upload Rust binary
         uses: rust-build/rust-build.action@v1.4.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          UPLOAD_MODE: release
           RUSTTARGET: ${{ matrix.target }}
-          ARCHIVE_TYPES: "zip tar.gz"
-          MINIFY: "true"
-          EXTRA_FILES: "README.md LICENSE"
           FEATURES: ${{ matrix.features }}
           TOOLCHAIN_VERSION: ${{ matrix.toolchain || 'stable' }}
+          ARCHIVE_TYPES: "zip tar.gz"
+          EXTRA_FILES: "README.md LICENSE"
