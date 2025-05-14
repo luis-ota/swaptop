@@ -2,7 +2,12 @@ name: Release
 
 on:
   push:
+    tags:
+      - 'v*'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   release:
@@ -10,27 +15,32 @@ jobs:
     strategy:
       matrix:
         include:
-          # Linux build: use Musl + linux feature
           - target: x86_64-unknown-linux-musl
             features: linux
-
-
-          # Windows build: use GNU + windows_support feature + nightly toolchain
           - target: x86_64-pc-windows-gnu
             features: windows_support
-            toolchain: nightly
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build and release Rust binary
-        uses: rust-build/rust-build.action@v1.4.5
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          body: Automated release for ${{ github.ref_name }}
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and release Rust binary
+        uses: rust-build/rust-build.action@v1.4.5
         with:
           RUSTTARGET: ${{ matrix.target }}
-          ARCHIVE_TYPES: "zip tar.gz"
+          FEATURES: ${{ matrix.features }}
+          ARCHIVE_TYPES: "tar.gz zip"
           MINIFY: "true"
           EXTRA_FILES: "README.md LICENSE"
-          FEATURES: ${{ matrix.features }}
-          TOOLCHAIN_VERSION: ${{ matrix.toolchain || 'stable' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
