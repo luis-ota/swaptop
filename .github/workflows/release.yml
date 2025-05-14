@@ -1,5 +1,8 @@
 name: Release
 
+permissions:
+  contents: write
+
 on:
   push:
     branches:
@@ -11,17 +14,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Create GitHub Release
+        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          tag="autobuild-$(date +%s)"
-          gh release create "$tag" \
-            --title "Auto Release $tag" \
-            --notes "Automated release from push on ${{ github.ref_name }}" \
-            --latest
-    outputs:
-      tag: ${{ steps.set_tag.outputs.tag }}
+        with:
+          tag_name: "autobuild-${{ github.run_number }}"
+          release_name: "Auto Release #${{ github.run_number }}"
+          body: |
+            Automated build from `${{ github.ref }}`
+          draft: false
+          prerelease: false
 
   release:
     needs: create_release
@@ -37,6 +41,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - name: Build and upload Rust binary
         uses: rust-build/rust-build.action@v1.4.5
         env:
@@ -48,4 +53,3 @@ jobs:
           TOOLCHAIN_VERSION: ${{ matrix.toolchain || 'stable' }}
           ARCHIVE_TYPES: "zip tar.gz"
           EXTRA_FILES: "README.md LICENSE"
-
