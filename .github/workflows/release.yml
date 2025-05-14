@@ -1,46 +1,51 @@
 name: Release
 
 on:
-  release:
-    types: [created]
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
-
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Create (empty) GitHub Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/v')
-        with:
-          tag_name: ${{ github.ref_name }}
-          # continue-on-error allows re-running without failure
-        continue-on-error: true
-
   release:
-    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
             features: linux
+            os_name: linux
           - target: x86_64-pc-windows-gnu
             features: windows_support
             toolchain: nightly
+            os_name: windows
 
     steps:
       - uses: actions/checkout@v4
-      - name: Build and upload Rust binary
-        uses: rust-build/rust-build.action@v1.4.5
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain || 'stable' }}
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Build binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package binary
+        run: |
+          mkdir dist
+          cp target/${{ matrix.target }}/release/* dist/
+          cp README.md LICENSE dist/ || true
+          tar -czf ${{ matrix.os_name }}.tar.gz -C dist .
+
+      - name: Create GitHub Release and Upload Assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          UPLOAD_MODE: release
-          RUSTTARGET: ${{ matrix.target }}
-          FEATURES: ${{ matrix.features }}
-          TOOLCHAIN_VERSION: ${{ matrix.toolchain || 'stable' }}
-          ARCHIVE_TYPES: "zip tar.gz"
-          EXTRA_FILES: "README.md LICENSE"
+        run: |
+          RELEASE_NAME="autobuild-$(date +%Y%m%d%H%M%S)"
+          gh release create "$RELEASE_NAME" \
+            --title "Auto Release $RELEASE_NAME" \
+            --notes "Automated build from branch: ${{ github.ref_name }}" \
+            "${{ matrix.os_name }}.tar.gz"
