@@ -3,7 +3,7 @@ name: Build and Release Rust App
 on:
   push:
     tags:
-      - 'v'  # Trigger on tags like v1.0.0, v0.2.3
+      - 'v*'  # Trigger on tags like v1.0.0, v0.2.3
 
 jobs:
   build_assets:
