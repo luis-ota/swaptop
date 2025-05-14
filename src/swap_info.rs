@@ -9,9 +9,6 @@ use procfs::{self, Current};
 #[cfg(feature = "linux")]
 use procfs::Meminfo;
 
-#[cfg(feature = "windows_support")]
-use sysinfo::System;
-
 
 #[derive(Debug, Clone)]
 pub struct ProcessSwapInfo {
@@ -44,6 +41,7 @@ pub enum SwapDataError {
     Io(#[from] std::io::Error),
 }
 
+#[cfg(feature = "windows_support")]
 #[cfg(target_os = "windows")]
 #[derive(Debug, Error)]
 pub enum SwapDataError {
