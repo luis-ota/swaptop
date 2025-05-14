@@ -1,55 +1,144 @@
-name: Release
-
-permissions:
-  contents: write
+name: Build and Release Rust App
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    tags:
+      - 'v'  # Trigger on tags like v1.0.0, v0.2.3
 
 jobs:
-  create_release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: "autobuild-${{ github.run_number }}"
-          release_name: "Auto Release #${{ github.run_number }}"
-          body: |
-            Automated build from `${{ github.ref }}`
-          draft: false
-          prerelease: false
-
-  release:
-    needs: create_release
+  build_assets:
+    name: Build for ${{ matrix.asset_suffix }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
-            features: linux
+            features: linux                # Your feature flag for Linux builds
+            asset_suffix: linux-musl
           - target: x86_64-pc-windows-gnu
-            features: windows_support
+            features: windows_support      # Your feature flag for Windows builds
             toolchain: nightly
-
+            asset_suffix: windows-gnu
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Build and upload Rust binary
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain || 'stable' }}
+          target: ${{ matrix.target }} # Ensure the build target is added to the toolchain
+
+      - name: Compile and Create Archives with rust-build
+        id: compile_archives
         uses: rust-build/rust-build.action@v1.4.5
+        # GITHUB_TOKEN is not strictly needed here if we manually upload artifacts later,
+        # but the action might still expect it for some operations.
+        # env:
+        #   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          RUSTTARGET: ${{ matrix.target }}
+          FEATURES: ${{ matrix.features || '' }} # Pass features; defaults to empty if not specified
+          TOOLCHAIN_VERSION: ${{ matrix.toolchain || 'stable' }} # rust-build might use this
+          ARCHIVE_TYPES: "zip tar.gz"  # Instructs rust-build to create both archive types
+          EXTRA_FILES: "README.md LICENSE"
+          # This action should create files like <repo_name>-<RUSTTARGET>.zip and <repo_name>-<RUSTTARGET>.tar.gz
+          # in the root of the workspace.
+
+      - name: Prepare Artifact Details
+        id: artifact_details
+        shell: bash
+        run: |
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+          VERSION_TAG="${{ github.ref_name }}"
+
+        
+          FILE_STEM="${REPO_NAME}-${{ matrix.target }}"
+          ZIP_FILE_NAME="${FILE_STEM}.zip"
+          TAR_GZ_FILE_NAME="${FILE_STEM}.tar.gz"
+
+          
+          UPLOAD_ZIP_ARTIFACT_NAME="${REPO_NAME}-${VERSION_TAG}-${{ matrix.asset_suffix }}.zip"
+          UPLOAD_TAR_GZ_ARTIFACT_NAME="${REPO_NAME}-${VERSION_TAG}-${{ matrix.asset_suffix }}.tar.gz"
+
+          echo "Generated files should be: ${ZIP_FILE_NAME} and ${TAR_GZ_FILE_NAME}"
+          echo "Current directory listing:"
+          ls -lh .
+
+          if [[ -f "${ZIP_FILE_NAME}" ]]; then
+            echo "zip_file_path=${ZIP_FILE_NAME}" >> $GITHUB_OUTPUT
+            echo "zip_upload_name=${UPLOAD_ZIP_ARTIFACT_NAME}" >> $GITHUB_OUTPUT
+            echo "Found ${ZIP_FILE_NAME}"
+          else
+            echo "::warning file=${{ github.workflow }},line=$(caller  | awk '{print $1}')"::"${ZIP_FILE_NAME} not found. Check rust-build output."
+          fi
+
+          if [[ -f "${TAR_GZ_FILE_NAME}" ]]; then
+            echo "tar_gz_file_path=${TAR_GZ_FILE_NAME}" >> $GITHUB_OUTPUT
+            echo "tar_gz_upload_name=${UPLOAD_TAR_GZ_ARTIFACT_NAME}" >> $GITHUB_OUTPUT
+            echo "Found ${TAR_GZ_FILE_NAME}"
+          else
+            echo "::warning file=${{ github.workflow }},line=$(caller  | awk '{print $1}')"::"${TAR_GZ_FILE_NAME} not found. Check rust-build output."
+          fi
+
+      - name: Upload ZIP Artifact
+        if: steps.artifact_details.outputs.zip_file_path
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact_details.outputs.zip_upload_name }}
+          path: ${{ steps.artifact_details.outputs.zip_file_path }}
+          if-no-files-found: error # Fail if the file isn't found (it should be, due to the 'if' condition)
+
+      - name: Upload TAR.GZ Artifact
+        if: steps.artifact_details.outputs.tar_gz_file_path
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact_details.outputs.tar_gz_upload_name }}
+          path: ${{ steps.artifact_details.outputs.tar_gz_file_path }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build_assets # Ensure all build jobs are complete
+    permissions:
+      contents: write # Required to create releases and upload assets to them
+    steps:
+      - name: Checkout code (optional, if you want to include files like CHANGELOG.md from the repo)
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets # All artifacts will be downloaded into subdirectories within 'release-assets'
+
+      - name: List downloaded files (for debugging)
+        shell: bash
+        run: |
+          echo "Listing downloaded artifacts in release-assets/:"
+          ls -R release-assets
+          echo "Preparing file list for release..."
+          # The softprops/action-gh-release action expects a list of file paths.
+          # This will find all files within the downloaded artifact directories.
+          find release-assets -type f -print0 | xargs -0 -I {} echo {}
+
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          UPLOAD_MODE: release
-          RUSTTARGET: ${{ matrix.target }}
-          FEATURES: ${{ matrix.features }}
-          TOOLCHAIN_VERSION: ${{ matrix.toolchain || 'stable' }}
-          ARCHIVE_TYPES: "zip tar.gz"
-          EXTRA_FILES: "README.md LICENSE"
+          tag_name: ${{ github.ref_name }} # Uses the tag that triggered the workflow (e.g., v1.0.0)
+          name: Release ${{ github.ref_name }} # Names the release (e.g., Release v1.0.0)
+          # You can customize the release body. For example, point to a CHANGELOG:
+          # body_path: CHANGELOG.md
+          # Or write it directly:
+          body: |
+            Automated release of ${{ github.ref_name }}.
+
+            **Assets:**
+            See the attached files for different platforms.
+          draft: false      # Set to true to create a draft release
+          prerelease: false # Set to true if this is a pre-release
+          files: |
+            release-assets/*/*
