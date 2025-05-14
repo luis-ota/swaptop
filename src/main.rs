@@ -302,7 +302,7 @@
                 Scrollbar::new(ScrollbarOrientation::VerticalRight)
                     .begin_symbol(Some("↑"))
                     .end_symbol(Some("↓"))
-                    .style(Style::default().fg(theme.border))
+                    .style(Style::default().fg(theme.scrollbar))
                     .thumb_style(Style::default().fg(theme.primary)),
                 area,
                 &mut self.vertical_scroll_state,

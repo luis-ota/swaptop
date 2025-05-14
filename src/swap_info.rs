@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use thiserror::Error;
+
+#[cfg(target_os = "windows")]
 use std::io;
 
 #[cfg(feature = "linux")]
@@ -48,7 +50,7 @@ pub enum SwapDataError {
     #[error("I/O error accessing system information: {0}")]
     Io(#[from] io::Error),
 }
-
+#[cfg(feature = "linux")]
 #[cfg(target_os = "linux")]
 pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>, SwapDataError> {
     let mut swap_processes = Vec::new();
