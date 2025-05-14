@@ -23,13 +23,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-
-      - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: ${{ matrix.toolchain || 'stable' }}
-          target: ${{ matrix.target }} # Ensure the build target is added to the toolchain
-
       - name: Compile and Create Archives with rust-build
         id: compile_archives
         uses: rust-build/rust-build.action@v1.4.5
