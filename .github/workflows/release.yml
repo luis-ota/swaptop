@@ -33,6 +33,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+
       - name: Build and release Rust binary
         uses: rust-build/rust-build.action@v1.4.5
         env:
