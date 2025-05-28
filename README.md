@@ -6,7 +6,7 @@ A real-time swap usage monitor for Linux and Windows systems with TUI interface.
 ![Swaptop Demo](docs/swaptop.gif)
 
 > [!TIP]
-> Blog post about this project: https://luis-ota.github.io/luis-blog/posts/swaptop
+> Blog post about this project: https://blog.wired.rs/posts/swaptop
 
 ## Features
 
