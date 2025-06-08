@@ -10,7 +10,7 @@ repository = "https://github.com/luis-ota/swaptop"
 license = "MIT"
 
 keywords = ["swap", "monitor", "cli", "tui", "swaptop"]
-categories = ["command-line-utilities", "system-monitoring"]
+categories = ["command-line-utilities", "visualization"]
 homepage = "https://github.com/luis-ota/swaptop"
 documentation = "https://github.com/luis-ota/swaptop"
 
