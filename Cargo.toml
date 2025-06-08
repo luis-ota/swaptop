@@ -4,8 +4,18 @@ version = "0.1.1"
 edition = "2024"
 authors = ["Luis Otavio <luotasss@gmail.com>"]
 
+description = "A terminal user interface tool to monitor swap usage on Linux and Windows."
+readme = "README.md"
+repository = "https://github.com/luis-ota/swaptop"  
+license = "MIT"
+
+keywords = ["swap", "monitor", "cli", "tui", "cross-platform", "swaptop", "btop", "top"]
+categories = ["command-line-utilities", "system-monitoring"]
+homepage = "https://github.com/luis-ota/swaptop"
+documentation = "https://github.com/luis-ota/swaptop"
+
 [features]
-default = []
+default = ["linux"]
 linux = ["procfs"]
 windows_support = ["tasklist", "sysinfo", "winapi"]
 
@@ -18,4 +28,4 @@ color-eyre = "0.6.3"
 procfs = { version = "0.17.0", optional = true }
 tasklist = { version = "0.3.0", optional = true }
 sysinfo = { version = "0.35.1", optional = true }
-winapi = { version = "0.3.9", features = ["memoryapi", "sysinfoapi", "winerror"], optional = true}
+winapi = { version = "0.3.9", features = ["memoryapi", "sysinfoapi", "winerror"], optional = true }
