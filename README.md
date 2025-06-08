@@ -28,9 +28,7 @@ A real-time swap usage monitor for Linux and Windows systems with TUI interface.
 
 ### From Source
 ```bash
-git clone https://github.com/luis-ota/swaptop.git
-cd swaptop
-cargo install --path . --features linux
+cargo install swaptop
 ```
 
 ### Windows
