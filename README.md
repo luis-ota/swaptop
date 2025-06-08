@@ -25,8 +25,6 @@ A real-time swap usage monitor for Linux and Windows systems with TUI interface.
 - Linux kernel 4.4+
 - procfs mounted at `/proc`
 
-
-### From Source
 ```bash
 cargo install swaptop
 ```
