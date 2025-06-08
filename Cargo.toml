@@ -9,7 +9,7 @@ readme = "README.md"
 repository = "https://github.com/luis-ota/swaptop"  
 license = "MIT"
 
-keywords = ["swap", "monitor", "cli", "tui", "cross-platform", "swaptop", "btop", "top"]
+keywords = ["swap", "monitor", "cli", "tui", "swaptop"]
 categories = ["command-line-utilities", "system-monitoring"]
 homepage = "https://github.com/luis-ota/swaptop"
 documentation = "https://github.com/luis-ota/swaptop"
