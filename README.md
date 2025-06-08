@@ -2,6 +2,7 @@
 A real-time swap usage monitor for Linux and Windows systems with TUI interface. Lists processes using swap, displays consumption per-process/per-software, and provides live-updating graphs.
 
 ![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fluis-ota%2Fswaptop&label=views&icon=github&color=%23cfe2ff)
+[![Crates.io](https://img.shields.io/crates/v/swaptop.svg)](https://crates.io/crates/swaptop)
 
 ![Swaptop Demo](docs/swaptop.gif)
 
