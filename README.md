@@ -97,6 +97,26 @@ Run with:
 ```bash
 sudo -E swaptop
 ```
+## Contributors
+
+<table>
+<tr>
+  <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
+        <a href=https://github.com/luis-ota>
+            <img src=https://avatars.githubusercontent.com/u/76752591?v=4 width="100" style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt="luis-ota"/>
+            <br />
+            <sub style="font-size:14px"><b>luis</b></sub>
+        </a>
+    </td>
+    <td align="center" style="word-wrap: break-word; width: 150.0; height: 150.0">
+        <a href=https://github.com/kpcyrd>
+            <img src=https://avatars.githubusercontent.com/u/7763184?v=4 width="100" style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt="kpcyrd"/>
+            <br />
+            <sub style="font-size:14px"><b>kpcyrd</b></sub>
+        </a>
+    </td>
+</tr>
+</table>
 
 ## License 
 
