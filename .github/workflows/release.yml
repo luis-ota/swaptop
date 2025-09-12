@@ -3,10 +3,10 @@ name: Build and Release Rust App (Cross-Compile)
 on:
   push:
     tags:
-      - 'v*.*.*' # Trigger on tags like v1.0.0, v0.2.3, etc.
+      - 'v*.*.*'
 
 env:
-  CARGO_TERM_COLOR: always # Ensure colors are used in Cargo output
+  CARGO_TERM_COLOR: always
 
 jobs:
   build:
@@ -16,13 +16,11 @@ jobs:
       matrix:
         include:
           - target_os: linux
-            features: linux
             output_artifact_suffix: linux-amd64
-            binary_name_suffix: "" # Linux binaries usually don't have an extension
+            binary_name_suffix: ""
             archive_format: tar.gz
           - target_os: windows
             rust_target: x86_64-pc-windows-gnu
-            features: windows_support
             output_artifact_suffix: windows-amd64
             binary_name_suffix: ".exe"
             archive_format: zip
@@ -34,10 +32,14 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt, clippy
+          toolchain: stable
+          target: ${{ matrix.rust_target }}
 
-      - name: Install cross-rs (for Windows cross-compilation)
+      - name: Install MinGW-w64 (for Windows cross-compile)
         if: matrix.target_os == 'windows'
-        uses: taiki-e/install-action@cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64
 
       - name: Install jq (for parsing Cargo.toml metadata)
         run: sudo apt-get update && sudo apt-get install -y jq
@@ -48,8 +50,6 @@ jobs:
           CRATE_NAME_RAW=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.manifest_path | contains("Cargo.toml")) | .name')
           echo "Raw CRATE_NAME from jq: '${CRATE_NAME_RAW}'"
           
-          # Sanitize CRATE_NAME to prevent characters that could break shell expansion
-          # Allows alphanumeric, underscore, hyphen.
           CRATE_NAME_SANITIZED=$(echo "${CRATE_NAME_RAW}" | sed 's/[^a-zA-Z0-9_-]//g')
           echo "Sanitized CRATE_NAME: '${CRATE_NAME_SANITIZED}'"
           
@@ -63,21 +63,21 @@ jobs:
 
       - name: Build for Linux (native)
         if: matrix.target_os == 'linux'
-        run: cargo build --release --features ${{ matrix.features }}
+        run: cargo build --release
         env:
           RUSTFLAGS: -C strip=symbols
 
       - name: Build for Windows (cross-compile)
         if: matrix.target_os == 'windows'
-        run: cross build --release --target ${{ matrix.rust_target }} --features ${{ matrix.features }}
+        run: cargo build --release --target ${{ matrix.rust_target }}
         env:
           RUSTFLAGS: -C strip=symbols
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
 
       - name: Determine Binary Path and Archive Name
         id: binary_info
         shell: bash
         run: |
-          # CRATE_NAME here comes from the GITHUB_ENV set in "Get and Sanitize Crate Name" step
           echo "DEBUG: CRATE_NAME from env: '${CRATE_NAME}'"
           echo "DEBUG: github.ref_name: '${{ github.ref_name }}'"
           echo "DEBUG: matrix.output_artifact_suffix: '${{ matrix.output_artifact_suffix }}'"
@@ -85,20 +85,14 @@ jobs:
           echo "DEBUG: matrix.binary_name_suffix (raw from matrix context): '${{ matrix.binary_name_suffix }}'"
           echo "DEBUG: matrix.rust_target (raw from matrix context): '${{ matrix.rust_target }}'"
 
-          # Corrected ARCHIVE_BASENAME to use dynamic values
           ARCHIVE_BASENAME="${CRATE_NAME}-${{ github.ref_name }}-${{ matrix.output_artifact_suffix }}"
           echo "Archive Basename: ${ARCHIVE_BASENAME}"
 
-          # Initialize BINARY_PATH to ensure it's set
           BINARY_PATH="" 
 
           if [[ "${{ matrix.target_os }}" == "linux" ]]; then
-            # This is the line that previously caused "bad substitution"
-            # Using CRATE_NAME from GITHUB_ENV, and matrix.binary_name_suffix (which is "" for linux)
-            # is substituted by Actions before bash sees it.
             BINARY_PATH="target/release/${CRATE_NAME}${{ matrix.binary_name_suffix }}"
           elif [[ "${{ matrix.target_os }}" == "windows" ]]; then
-            # Corrected Windows path to use matrix.rust_target
             BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}${{ matrix.binary_name_suffix }}"
           else
             echo "::error::Unknown matrix.target_os: ${{ matrix.target_os }}"
@@ -113,7 +107,7 @@ jobs:
           fi
           if [[ ! -f "${BINARY_PATH}" && "${{ matrix.target_os }}" == "windows" && -f "target/${{ matrix.rust_target }}/release/${CRATE_NAME}.exe" ]]; then
              echo "::warning::Expected BINARY_PATH not found, but found .exe directly. Forcing .exe suffix."
-             BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}.exe" # Common fallback if suffix logic was off
+             BINARY_PATH="target/${{ matrix.rust_target }}/release/${CRATE_NAME}.exe"
           elif [[ ! -f "${BINARY_PATH}" ]]; then
              echo "::error::Binary file not found at expected path: ${BINARY_PATH}"
              echo "Listing target directory contents:"
@@ -129,15 +123,11 @@ jobs:
         run: |
           BINARY_PATH="${{ steps.binary_info.outputs.binary_path_output }}"
           ARCHIVE_BASENAME="${{ steps.binary_info.outputs.archive_basename_output }}"
-          # CRATE_NAME is available from GITHUB_ENV
-          # matrix.binary_name_suffix is available via ${{ matrix.binary_name_suffix }}
           
           STAGING_DIR="staging_dir_for_archive" 
 
           mkdir -p "${STAGING_DIR}"
           
-          # The actual filename of the binary after build
-          # For linux, matrix.binary_name_suffix is "", for windows it's ".exe"
           COMPILED_BINARY_FILENAME="${CRATE_NAME}${{ matrix.binary_name_suffix }}"
           
           echo "Copying '${BINARY_PATH}' to '${STAGING_DIR}/${COMPILED_BINARY_FILENAME}'"
@@ -151,7 +141,6 @@ jobs:
             tar -czvf "${FINAL_ARCHIVE_NAME}" -C "${STAGING_DIR}" .
           elif [[ "${{ matrix.archive_format }}" == "zip" ]]; then
             FINAL_ARCHIVE_NAME="${ARCHIVE_BASENAME}.zip"
-            # Ensure zip utility is available (it usually is on ubuntu-latest, but good practice)
             if ! command -v zip &> /dev/null; then sudo apt-get update && sudo apt-get install -y zip; fi
             (cd "${STAGING_DIR}" && zip -r "../${FINAL_ARCHIVE_NAME}" .)
           fi
@@ -178,12 +167,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install jq (for parsing Cargo.toml metadata)
-        if: env.CRATE_NAME_RELEASE == '' # Only if not already set (e.g. if build job outputs were not used)
+        if: env.CRATE_NAME_RELEASE == ''
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Get Crate Name for Release
         id: get_crate_name_release
-        # This step ensures CRATE_NAME_RELEASE is set, preferring build job's output if available
-        # but falling back to direct calculation if needed (though build job should set it)
         run: |
           if [[ -n "${{ needs.build.outputs.crate_name_output }}" ]]; then
              CRATE_NAME="${{ needs.build.outputs.crate_name_output }}"
@@ -193,7 +180,6 @@ jobs:
           echo "Release Crate Name: '${CRATE_NAME}'"
           echo "CRATE_NAME_RELEASE=${CRATE_NAME}" >> $GITHUB_ENV
           echo "crate_name_output=${CRATE_NAME}" >> $GITHUB_OUTPUT
-
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
