@@ -2,6 +2,8 @@ name: Build and Release Rust App (Cross-Compile)
 
 on:
   push:
+    branches:
+      - build-test
     tags:
       - 'v*.*.*'
 
