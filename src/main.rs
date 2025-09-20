@@ -40,7 +40,8 @@
         current_theme: ThemeType,
         time_window: [f64; 2],
         chart_data: Vec<(f64, f64)>,
-        timeout: u64
+        timeout: u64,
+        visible_height: usize,
     }
 
     impl App {
@@ -57,7 +58,8 @@
                 current_theme: ThemeType::Dracula,
                 time_window: [0.0, 60.0],
                 chart_data: Vec::new(),
-                timeout: 1000
+                timeout: 1000,
+                visible_height: 0,
             }
         }
 
@@ -149,6 +151,32 @@
                 KeyCode::Char('u') | KeyCode::Up => {
                     self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
                     self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
+                }
+                KeyCode::End => {
+                    self.vertical_scroll = self.swap_processes_lines.len();
+                    self.vertical_scroll_state =
+                        self.vertical_scroll_state.position(self.vertical_scroll);
+                }
+                KeyCode::Home => {
+                    self.vertical_scroll = 0;
+                    self.vertical_scroll_state =
+                        self.vertical_scroll_state.position(self.vertical_scroll);
+                }
+
+                KeyCode::PageDown => {
+                    let page_size = self.visible_height.saturating_sub(4);
+                    self.vertical_scroll = self
+                        .vertical_scroll
+                        .saturating_add(page_size)
+                        .min(self.swap_processes_lines.len().saturating_sub(1));
+                    self.vertical_scroll_state =
+                        self.vertical_scroll_state.position(self.vertical_scroll);
+                }
+                KeyCode::PageUp => {
+                    let page_size = self.visible_height.saturating_sub(4);
+                    self.vertical_scroll = self.vertical_scroll.saturating_sub(page_size);
+                    self.vertical_scroll_state =
+                        self.vertical_scroll_state.position(self.vertical_scroll);
                 }
 
                 // change unit
@@ -275,10 +303,10 @@
                 SizeUnits::MB => "KB─▶MB◀─GB",
                 SizeUnits::GB => "KB─MB─▶GB◀",
             };
-            
-            let visible_height = area.height as usize;
+
+            self.visible_height = area.height as usize;
             let content_height = self.swap_processes_lines.len() + 2;
-            self.vertical_scroll = self.vertical_scroll.min(content_height.saturating_sub(visible_height));
+            self.vertical_scroll = self.vertical_scroll.min(content_height.saturating_sub(self.visible_height));
             self.vertical_scroll_state = self.vertical_scroll_state
                 .content_length(content_height)
                 .position(self.vertical_scroll);
@@ -287,7 +315,7 @@
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(theme.border))
                 .style(Style::default().bg(theme.background))
-                .title(Line::from("(a to aggregate) (u/d or ▲/▼ to scroll)").fg(theme.text).right_aligned())
+                .title(Line::from("(a to aggregate) (u/d or ▲/▼ or Home/End or PgUp/PgDown to scroll)").fg(theme.text).right_aligned())
                 .title(Line::from(format!("unit (k/m/g to change): {}", unit_buttons))
                     .fg(theme.secondary).bold().left_aligned());
 
