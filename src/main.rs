@@ -315,7 +315,7 @@
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(theme.border))
                 .style(Style::default().bg(theme.background))
-                .title(Line::from("(a to aggregate) (u/d or ▲/▼ or Home/End or PgUp/PgDown to scroll)").fg(theme.text).right_aligned())
+                .title(Line::from("(a to aggregate) (u/d|▲/▼|home/end|pgup/pgdown to scroll)").fg(theme.text).right_aligned())
                 .title(Line::from(format!("unit (k/m/g to change): {}", unit_buttons))
                     .fg(theme.secondary).bold().left_aligned());
 
