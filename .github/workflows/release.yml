@@ -201,7 +201,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref_name }}
-          name: Release ${{ env.CRATE_NAME_RELEASE }} ${{ github.ref_name }}
+          name: ${{ env.CRATE_NAME_RELEASE }} ${{ github.ref_name }}
           body: |
             Automated release of ${{ env.CRATE_NAME_RELEASE }} version ${{ github.ref_name }}.
 
