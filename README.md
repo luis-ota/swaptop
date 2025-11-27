@@ -12,6 +12,7 @@ A real-time swap usage monitor for Linux and Windows systems with TUI interface.
 ## Features
 
 - Real-time animated swap usage graph
+- List Swap devices with usage per disk / type
 - Process-level swap consumption tracking
 - Grouped view by software (aggregate mode)
 - Multiple color themes (Dracula, Solarized, Monokai, Nord)
