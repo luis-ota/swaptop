@@ -20,7 +20,7 @@ pub struct ProcessSwapInfo {
 pub struct InfoSwap {
     pub name: String,
     pub kind: String,
-    pub size_kb: u64,
+    pub size_kb: f64,
     pub used_kb: f64,
     pub priority: isize,
 }
@@ -65,7 +65,7 @@ pub fn get_swap_devices(unit: SizeUnits) -> std::io::Result<Vec<InfoSwap>> {
         out.push(InfoSwap {
             name: s.source.to_string_lossy().into_owned(),
             kind: s.kind.to_string_lossy().into_owned(),
-            size_kb: s.size as u64,
+            size_kb: convert_swap(s.size as u64, unit.to_owned()),
             used_kb: convert_swap(s.used as u64, unit.to_owned()),
             priority: s.priority,
         });
@@ -77,33 +77,47 @@ pub fn get_swap_devices(unit: SizeUnits) -> std::io::Result<Vec<InfoSwap>> {
 pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>, SwapDataError> {
     let mut swap_processes = Vec::new();
 
-    for process_result in procfs::process::all_processes()? {
-        match process_result {
-            Ok(process) => {
-                let pid = process.pid;
-                if let Ok(status) = process.status() {
-                    if let Some(swap_kb) = status.vmswap {
-                        if swap_kb > 0 {
-                            let name = match process.stat() {
-                                Ok(stat) => stat.comm,
-                                Err(_) => "unknown".to_string(),
-                            };
-                            let swap_size = convert_swap(swap_kb, unit.clone());
-                            let info = ProcessSwapInfo {
-                                pid: pid as u32,
-                                name,
-                                swap_size,
-                            };
-                            swap_processes.push(info);
-                        }
-                    }
-                }
-            }
-            Err(_) => {}
+    for process in (procfs::process::all_processes()?).flatten() {
+        let pid = process.pid;
+        if let Ok(status) = process.status()
+            && let Some(swap_kb) = status.vmswap
+            && swap_kb > 0
+        {
+            let name = match process.stat() {
+                Ok(stat) => stat.comm,
+                Err(_) => "unknown".to_string(),
+            };
+            let swap_size = convert_swap(swap_kb, unit.clone());
+            let info = ProcessSwapInfo {
+                pid: pid as u32,
+                name,
+                swap_size,
+            };
+            swap_processes.push(info);
         }
     }
 
     Ok(swap_processes)
+}
+
+#[cfg(target_os = "linux")]
+pub fn find_mount_device(path: &std::path::Path) -> Option<String> {
+    let abs_path = path.canonicalize().ok()?;
+
+    let mountinfo = procfs::process::Process::myself()
+        .and_then(|p| p.mountinfo())
+        .ok()?;
+
+    let best_mount = mountinfo
+        .into_iter()
+        .filter(|m| abs_path.starts_with(&m.mount_point))
+        .max_by_key(|m| m.mount_point.components().count())?;
+
+    Some(if best_mount.fs_type == "devtmpfs" {
+        "RAM".to_owned()
+    } else {
+        best_mount.mount_source?
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -138,10 +152,9 @@ pub fn get_chart_info(unit: SizeUnits) -> Result<SwapUpdate, SwapDataError> {
 
     let total_swap_kb = meminfo.swap_total / 1024;
     let used_swap_kb = meminfo.swap_total.saturating_sub(meminfo.swap_free) / 1024;
-    let swap_devices = get_swap_devices(unit)?;
 
     Ok(SwapUpdate {
-        swap_devices: swap_devices,
+        swap_devices: get_swap_devices(unit)?,
         total_swap: total_swap_kb,
         used_swap: used_swap_kb,
     })

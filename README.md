@@ -49,6 +49,7 @@ swaptop
 |-------------|------------------------------|
 | `q`/`Esc`   | Quit application             |
 | `k`/`m`/`g` | Switch units (KB/MB/GB)      |
+| `h`         | Hide / Show swap devices     |
 | `a`         | Toggle aggregate mode        |
 | `t`         | Cycle through themes         |
 | `↑`/`u`     | Scroll up                    |
