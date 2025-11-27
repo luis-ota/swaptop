@@ -918,7 +918,7 @@ dependencies = [
 
 [[package]]
 name = "swaptop"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "color-eyre",
  "crossterm 0.29.0",
