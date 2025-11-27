@@ -4,6 +4,7 @@ use thiserror::Error;
 #[cfg(target_os = "windows")]
 use std::io;
 
+#[cfg(target_os = "linux")]
 use proc_mounts::SwapIter;
 #[cfg(target_os = "linux")]
 use procfs::{self, Current, Meminfo};
@@ -124,23 +125,17 @@ pub fn find_mount_device(path: &std::path::Path) -> Option<String> {
 pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>, SwapDataError> {
     let mut profile_page_processes = Vec::new();
 
-    match tasklist::Tasklist::new() {
-        Ok(tasks) => {
-            for task in tasks {
-                let meminfo = task.get_memory_info();
+    if let Ok(tasks) = tasklist::Tasklist::new() {
+        for task in tasks {
+            let meminfo = task.get_memory_info();
 
-                let info = ProcessSwapInfo {
-                    pid: task.pid,
-                    name: task.pname,
-                    swap_size: convert_swap(
-                        meminfo.get_pagefile_usage() as u64 / 1024,
-                        unit.clone(),
-                    ),
-                };
-                profile_page_processes.push(info);
-            }
+            let info = ProcessSwapInfo {
+                pid: task.pid,
+                name: task.pname,
+                swap_size: convert_swap(meminfo.get_pagefile_usage() as u64 / 1024, unit.clone()),
+            };
+            profile_page_processes.push(info);
         }
-        Err(_) => {}
     }
 
     Ok(profile_page_processes)
@@ -183,8 +178,8 @@ pub fn get_chart_info() -> Result<SwapUpdate, SwapDataError> {
         let used_swap = (mem_status.ullTotalPageFile - mem_status.ullAvailPageFile) / 1024;
 
         Ok(SwapUpdate {
-            total_swap: total_swap as u64,
-            used_swap: used_swap as u64,
+            total_swap,
+            used_swap,
         })
     }
 }
