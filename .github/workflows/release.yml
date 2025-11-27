@@ -5,7 +5,7 @@ on:
     branches:
       - build-test
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
 
 env:
   CARGO_TERM_COLOR: always
@@ -51,15 +51,15 @@ jobs:
         run: |
           CRATE_NAME_RAW=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.manifest_path | contains("Cargo.toml")) | .name')
           echo "Raw CRATE_NAME from jq: '${CRATE_NAME_RAW}'"
-          
+
           CRATE_NAME_SANITIZED=$(echo "${CRATE_NAME_RAW}" | sed 's/[^a-zA-Z0-9_-]//g')
           echo "Sanitized CRATE_NAME: '${CRATE_NAME_SANITIZED}'"
-          
+
           if [[ -z "${CRATE_NAME_SANITIZED}" ]]; then
             echo "::error::CRATE_NAME is empty after sanitization. Original from jq: '${CRATE_NAME_RAW}'"
             exit 1
           fi
-          
+
           echo "CRATE_NAME=${CRATE_NAME_SANITIZED}" >> $GITHUB_ENV
           echo "crate_name_output=${CRATE_NAME_SANITIZED}" >> $GITHUB_OUTPUT
 
@@ -90,7 +90,7 @@ jobs:
           ARCHIVE_BASENAME="${CRATE_NAME}-${{ github.ref_name }}-${{ matrix.output_artifact_suffix }}"
           echo "Archive Basename: ${ARCHIVE_BASENAME}"
 
-          BINARY_PATH="" 
+          BINARY_PATH=""
 
           if [[ "${{ matrix.target_os }}" == "linux" ]]; then
             BINARY_PATH="target/release/${CRATE_NAME}${{ matrix.binary_name_suffix }}"
@@ -102,7 +102,7 @@ jobs:
           fi
 
           echo "Determined Binary Path: '${BINARY_PATH}'"
-          
+
           if [[ -z "${BINARY_PATH}" ]]; then
             echo "::error::BINARY_PATH is empty. This should not happen."
             exit 1
@@ -125,13 +125,13 @@ jobs:
         run: |
           BINARY_PATH="${{ steps.binary_info.outputs.binary_path_output }}"
           ARCHIVE_BASENAME="${{ steps.binary_info.outputs.archive_basename_output }}"
-          
-          STAGING_DIR="staging_dir_for_archive" 
+
+          STAGING_DIR="staging_dir_for_archive"
 
           mkdir -p "${STAGING_DIR}"
-          
+
           COMPILED_BINARY_FILENAME="${CRATE_NAME}${{ matrix.binary_name_suffix }}"
-          
+
           echo "Copying '${BINARY_PATH}' to '${STAGING_DIR}/${COMPILED_BINARY_FILENAME}'"
           cp "${BINARY_PATH}" "${STAGING_DIR}/${COMPILED_BINARY_FILENAME}"
 
@@ -194,20 +194,3 @@ jobs:
           ls -R release-assets
           echo "Preparing file list for release..."
           find release-assets -type f -print0 | xargs -0 -I {} echo {}
-
-      - name: Create GitHub Release and Upload Assets
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ env.CRATE_NAME_RELEASE }} ${{ github.ref_name }}
-          body: |
-            Automated release of ${{ env.CRATE_NAME_RELEASE }} version ${{ github.ref_name }}.
-
-            Built from commit: ${{ github.sha }}
-            Commit message: ${{ github.event.head_commit.message }}
-
-            See attached assets for Linux and Windows.
-          files: |
-            release-assets/*/*
