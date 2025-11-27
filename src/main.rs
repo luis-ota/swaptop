@@ -19,6 +19,28 @@ use ratatui::{
 use std::time::{Duration, Instant};
 use swap_info::{SizeUnits, get_chart_info, get_processes_using_swap};
 
+const LINUX: bool = cfg!(target_os = "linux");
+
+#[cfg(target_os = "linux")]
+fn find_mount_device(path: &std::path::Path) -> Option<String> {
+    let abs_path = path.canonicalize().ok()?;
+
+    let mountinfo = procfs::process::Process::myself()
+        .and_then(|p| p.mountinfo())
+        .ok()?;
+
+    let best_mount = mountinfo
+        .into_iter()
+        .filter(|m| abs_path.starts_with(&m.mount_point))
+        .max_by_key(|m| m.mount_point.components().count())?;
+
+    Some(if best_mount.fs_type == "devtmpfs" {
+        "RAM".to_owned()
+    } else {
+        best_mount.mount_source?
+    })
+}
+
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let terminal = ratatui::init();
@@ -30,6 +52,7 @@ fn main() -> color_eyre::Result<()> {
 #[derive(Debug, Default)]
 pub struct App {
     running: bool,
+    display_devices: bool,
     pub vertical_scroll_state: ScrollbarState,
     pub vertical_scroll: usize,
     pub swap_size_unit: crate::SizeUnits,
@@ -48,6 +71,7 @@ impl App {
     pub fn new() -> Self {
         Self {
             running: false,
+            display_devices: false,
             vertical_scroll_state: ScrollbarState::default(),
             vertical_scroll: 0,
             swap_size_unit: SizeUnits::KB,
@@ -70,20 +94,19 @@ impl App {
         self.last_update = Some(Instant::now());
 
         while self.running {
-            terminal.draw(|frame| self.render(frame))?;
-
             if event::poll(Duration::from_millis(100))? {
                 self.handle_crossterm_events()?;
             }
+            self.chart_info = get_chart_info(self.swap_size_unit.to_owned())?;
+            self.swap_processes_lines = self.create_process_lines(self.aggregated);
 
             if let Some(last_update) = self.last_update {
                 if last_update.elapsed() >= Duration::from_millis(self.timeout) {
                     self.update_chart_data();
-                    self.swap_processes_lines = self.create_process_lines(self.aggregated);
-                    self.chart_info = get_chart_info(self.swap_size_unit.to_owned())?;
                     self.last_update = Some(Instant::now());
                 }
             }
+            terminal.draw(|frame| self.render(frame))?;
         }
         Ok(())
     }
@@ -121,15 +144,15 @@ impl App {
             .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
             .split(main_area);
 
-        if cfg!(target_os = "linux") {
+        if LINUX && self.display_devices {
             let upper_chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-                .split(chunks[0]);
+                .split(chunks[1]);
 
             self.render_swap_devices(frame, upper_chunks[0], &theme);
-            self.render_animated_chart(frame, upper_chunks[1], &theme);
-            self.render_processes_list(frame, chunks[1], &theme);
+            self.render_animated_chart(frame, chunks[0], &theme);
+            self.render_processes_list(frame, upper_chunks[1], &theme);
         } else {
             self.render_animated_chart(frame, chunks[0], &theme);
             self.render_processes_list(frame, chunks[1], &theme);
@@ -218,6 +241,13 @@ impl App {
             // change theme
             KeyCode::Char('t') => self.cycle_theme(),
 
+            // display swap devices
+            KeyCode::Char('h') => {
+                if LINUX {
+                    self.display_devices = !self.display_devices
+                }
+            }
+
             // change timeout
             KeyCode::Left | KeyCode::Right => self.change_timout(key.code),
 
@@ -254,7 +284,7 @@ impl App {
         let mut lines = Vec::new();
 
         lines.push(Line::from(vec![
-            format!("{:12}", if self.aggregated { "COUNT" } else { "PID" }).bold(),
+            format!("{:>12}", if self.aggregated { "COUNT" } else { "PID" }).bold(),
             " | ".into(),
             format!("{:30}", "PROCESS").bold(),
             " | ".into(),
@@ -292,42 +322,61 @@ impl App {
     }
 
     fn render_swap_devices(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
-        // self.visible_height = area.height as usize;
-        // let content_height = self.chart_info.swap_devices.len() + 2;
+        let name_width = self
+            .chart_info
+            .swap_devices
+            .iter()
+            .map(|d| d.name.len())
+            .max()
+            .unwrap_or(10)
+            .max(10);
 
-        // self.vertical_scroll = self
-        //     .vertical_scroll
-        //     .min(content_height.saturating_sub(self.visible_height));
-        // self.vertical_scroll_state = self
-        //     .vertical_scroll_state
-        //     .content_length(content_height)
-        //     .position(self.vertical_scroll);
+        let source_width = self
+            .chart_info
+            .swap_devices
+            .iter()
+            .filter_map(|d| {
+                let src = find_mount_device(std::path::Path::new(&d.name))
+                    .unwrap_or_else(|| "RAM".into());
+                Some(src.len())
+            })
+            .max()
+            .unwrap_or(4)
+            .max(4);
+
+        let header = format!(
+            "{:<source_width$} | {:<name_width$} | {:<10} | {:>8} | {:<10}",
+            "disk", "path", "type", "priority", "used"
+        );
+        let mut lines = vec![Line::from(header)];
+
+        for device in &self.chart_info.swap_devices {
+            let used = match self.swap_size_unit {
+                SizeUnits::KB => device.used_kb.to_string(),
+                _ => format!("{:.2}", device.used_kb),
+            };
+
+            let source = find_mount_device(std::path::Path::new(&device.name))
+                .unwrap_or_else(|| "RAM".into());
+
+            let row = format!(
+                "{:<source_width$} | {:<name_width$} | {:<10} | {:>8} | {:<10}",
+                source, device.name, device.kind, device.priority, used
+            );
+            lines.push(Line::from(row));
+        }
 
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.border))
             .style(Style::default().bg(theme.background))
-            .title(Line::from("swap devices").fg(theme.text).left_aligned());
+            .title(Line::from("swap devices").fg(theme.text).left_aligned())
+            .title_bottom(Line::from("(h to hide swap devices)").left_aligned());
 
-        let mut devices = Vec::new();
-
-        for device in self.chart_info.clone().swap_devices {
-            let mut used = format!("{:.2}", device.used_kb);
-            if let SizeUnits::KB = self.swap_size_unit {
-                used = format!("{}", device.used_kb)
-            }
-            devices.push(Line::from(format!(
-                "{} | {} | {} | {}",
-                device.name, device.kind, used, device.priority
-            )));
-        }
-
-        let process_paragraph = Paragraph::new(devices)
-            .alignment(Alignment::Center)
-            .block(block);
-
-        frame.render_widget(process_paragraph, area);
+        let para = Paragraph::new(lines).block(block).centered();
+        frame.render_widget(para, area);
     }
+
     fn render_animated_chart(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let total = convert_swap(self.chart_info.total_swap, self.swap_size_unit.clone());
         let used = convert_swap(self.chart_info.used_swap, self.swap_size_unit.clone());
@@ -394,6 +443,11 @@ impl App {
             .content_length(content_height)
             .position(self.vertical_scroll);
 
+        let bottom_title = if LINUX && !self.display_devices {
+            "(h to show swap devices)"
+        } else {
+            ""
+        };
         let bottom_block = Block::bordered()
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.border))
@@ -408,7 +462,8 @@ impl App {
                     .fg(theme.secondary)
                     .bold()
                     .left_aligned(),
-            );
+            )
+            .title_bottom(Line::from(bottom_title).left_aligned());
 
         let process_paragraph = Paragraph::new(self.swap_processes_lines.clone())
             .alignment(Alignment::Center)
