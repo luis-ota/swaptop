@@ -2,8 +2,6 @@ name: Build and Release Rust App (Cross-Compile)
 
 on:
   push:
-    branches:
-      - build-test
     tags:
       - "v*.*.*"
 
@@ -194,3 +192,20 @@ jobs:
           ls -R release-assets
           echo "Preparing file list for release..."
           find release-assets -type f -print0 | xargs -0 -I {} echo {}
+
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ env.CRATE_NAME_RELEASE }} ${{ github.ref_name }}
+          body: |
+            Automated release of ${{ env.CRATE_NAME_RELEASE }} version ${{ github.ref_name }}.
+
+            Built from commit: ${{ github.sha }}
+            Commit message: ${{ github.event.head_commit.message }}
+
+            See attached assets for Linux and Windows.
+          files: |
+            release-assets/*/*
