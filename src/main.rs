@@ -164,6 +164,9 @@ impl App {
             self.render_animated_chart(frame, upper_chunks[1], &theme);
             self.render_processes_list(frame, chunks[1], &theme);
             self.render_swap_devices(frame, upper_chunks[0], &theme);
+        } else {
+            self.render_animated_chart(frame, chunks[0], &theme);
+            self.render_processes_list(frame, chunks[1], &theme);
         }
 
         frame.render_widget(main_block, frame.area());
