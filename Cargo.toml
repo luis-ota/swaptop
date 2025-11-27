@@ -6,7 +6,7 @@ authors = ["Luis Otavio <luotasss@gmail.com>"]
 
 description = "A terminal user interface tool to monitor swap usage on Linux and Windows."
 readme = "README.md"
-repository = "https://github.com/luis-ota/swaptop"  
+repository = "https://github.com/luis-ota/swaptop"
 license = "MIT"
 
 keywords = ["swap", "monitor", "cli", "tui", "swaptop"]
@@ -22,6 +22,7 @@ color-eyre = "0.6.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = "0.17.0"
+proc-mounts = "0.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 tasklist = "0.3.0"
