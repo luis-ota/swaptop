@@ -1,7 +1,10 @@
 mod swap_info;
 mod theme;
 
-use crate::swap_info::{SwapUpdate, aggregate_processes, convert_swap, find_mount_device};
+#[cfg(target_os = "linux")]
+use crate::swap_info::find_mount_device;
+use crate::swap_info::{SwapUpdate, aggregate_processes, convert_swap};
+
 use crate::theme::{Theme, ThemeType};
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -67,6 +70,7 @@ impl App {
         }
     }
 
+    #[cfg(target_os = "linux")]
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
         self.swap_processes_lines = self.create_process_lines(self.aggregated);
@@ -92,6 +96,32 @@ impl App {
         Ok(())
     }
 
+    #[cfg(target_os = "windows")]
+    pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+        self.running = true;
+        self.swap_processes_lines = self.create_process_lines(self.aggregated);
+        self.chart_info = get_chart_info()?;
+        self.last_update = Some(Instant::now());
+
+        while self.running {
+            if event::poll(Duration::from_millis(100))? {
+                self.handle_crossterm_events()?;
+            }
+
+            if let Some(last_update) = self.last_update
+                && last_update.elapsed() >= Duration::from_millis(self.timeout)
+            {
+                self.chart_info = get_chart_info()?;
+                self.update_chart_data();
+                self.last_update = Some(Instant::now());
+                self.swap_processes_lines = self.create_process_lines(self.aggregated);
+            }
+
+            terminal.draw(|frame| self.render(frame))?;
+        }
+        Ok(())
+    }
+    #[cfg(target_os = "linux")]
     fn render(&mut self, frame: &mut Frame) {
         let theme = Theme::from(self.current_theme);
 
@@ -125,7 +155,7 @@ impl App {
             .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
             .split(main_area);
 
-        if LINUX && self.display_devices {
+        if self.display_devices {
             let upper_chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
@@ -134,10 +164,47 @@ impl App {
             self.render_animated_chart(frame, upper_chunks[1], &theme);
             self.render_processes_list(frame, chunks[1], &theme);
             self.render_swap_devices(frame, upper_chunks[0], &theme);
-        } else {
-            self.render_animated_chart(frame, chunks[0], &theme);
-            self.render_processes_list(frame, chunks[1], &theme);
         }
+
+        frame.render_widget(main_block, frame.area());
+    }
+
+    #[cfg(target_os = "windows")]
+    fn render(&mut self, frame: &mut Frame) {
+        let theme = Theme::from(self.current_theme);
+
+        let main_block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme.border))
+            .title(
+                Line::from(" swaptop ")
+                    .bold()
+                    .fg(theme.primary)
+                    .left_aligned(),
+            )
+            .title(
+                Line::from(format!("theme (t to change): {:?}", self.current_theme))
+                    .bold()
+                    .fg(theme.primary)
+                    .right_aligned(),
+            )
+            .title(
+                Line::from(format!(" < {:?}ms > ", self.timeout))
+                    .bold()
+                    .fg(theme.primary)
+                    .centered(),
+            )
+            .style(Style::default().bg(theme.background).fg(theme.text));
+
+        let main_area = main_block.inner(frame.area());
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
+            .split(main_area);
+
+        self.render_animated_chart(frame, chunks[0], &theme);
+        self.render_processes_list(frame, chunks[1], &theme);
 
         frame.render_widget(main_block, frame.area());
     }
@@ -163,6 +230,7 @@ impl App {
         Ok(())
     }
 
+    #[cfg(target_os = "linux")]
     fn on_key_event(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
             return;
@@ -253,6 +321,99 @@ impl App {
             _ => {}
         }
     }
+
+    #[cfg(target_os = "windows")]
+    fn on_key_event(&mut self, key: KeyEvent) {
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
+
+        match key.code {
+            // quit
+            KeyCode::Esc | KeyCode::Char('q') => self.quit(),
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit(),
+
+            // up and down list
+            KeyCode::Char('d') | KeyCode::Down => {
+                self.vertical_scroll = self.vertical_scroll.saturating_add(1);
+                self.vertical_scroll_state =
+                    self.vertical_scroll_state.position(self.vertical_scroll);
+            }
+            KeyCode::Char('u') | KeyCode::Up => {
+                self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
+                self.vertical_scroll_state =
+                    self.vertical_scroll_state.position(self.vertical_scroll);
+            }
+            KeyCode::End => {
+                self.vertical_scroll = self.swap_processes_lines.len();
+                self.vertical_scroll_state =
+                    self.vertical_scroll_state.position(self.vertical_scroll);
+            }
+            KeyCode::Home => {
+                self.vertical_scroll = 0;
+                self.vertical_scroll_state =
+                    self.vertical_scroll_state.position(self.vertical_scroll);
+            }
+
+            KeyCode::PageDown => {
+                let page_size = self.visible_height.saturating_sub(4);
+                self.vertical_scroll = self
+                    .vertical_scroll
+                    .saturating_add(page_size)
+                    .min(self.swap_processes_lines.len().saturating_sub(1));
+                self.vertical_scroll_state =
+                    self.vertical_scroll_state.position(self.vertical_scroll);
+            }
+            KeyCode::PageUp => {
+                let page_size = self.visible_height.saturating_sub(4);
+                self.vertical_scroll = self.vertical_scroll.saturating_sub(page_size);
+                self.vertical_scroll_state =
+                    self.vertical_scroll_state.position(self.vertical_scroll);
+            }
+
+            // change unit
+            KeyCode::Char('k') => {
+                self.swap_size_unit = SizeUnits::KB;
+                if let Ok(info) = get_chart_info() {
+                    self.chart_info = info;
+                    self.swap_processes_lines = self.create_process_lines(self.aggregated);
+                }
+            }
+            KeyCode::Char('m') => {
+                self.swap_size_unit = SizeUnits::MB;
+                if let Ok(info) = get_chart_info() {
+                    self.chart_info = info;
+                    self.swap_processes_lines = self.create_process_lines(self.aggregated);
+                }
+            }
+            KeyCode::Char('g') => {
+                self.swap_size_unit = SizeUnits::GB;
+                if let Ok(info) = get_chart_info() {
+                    self.chart_info = info;
+                    self.swap_processes_lines = self.create_process_lines(self.aggregated);
+                }
+            }
+
+            // aggregate
+            KeyCode::Char('a') => self.aggregated = !self.aggregated,
+
+            // change theme
+            KeyCode::Char('t') => self.cycle_theme(),
+
+            // display swap devices
+            KeyCode::Char('h') => {
+                if LINUX {
+                    self.display_devices = !self.display_devices
+                }
+            }
+
+            // change timeout
+            KeyCode::Left | KeyCode::Right => self.change_timout(key.code),
+
+            _ => {}
+        }
+    }
+
     fn cycle_theme(&mut self) {
         self.current_theme = match self.current_theme {
             ThemeType::Default => ThemeType::Solarized,
@@ -333,6 +494,7 @@ impl App {
         total_used_title
     }
 
+    #[cfg(target_os = "linux")]
     fn render_swap_devices(&mut self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let total_used_title = self.generete_total_used_title();
 
