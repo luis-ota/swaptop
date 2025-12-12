@@ -2,7 +2,9 @@
 name = "swaptop"
 version = "1.0.4"
 edition = "2024"
+rust-version = "1.88.0"
 authors = ["Luis Otavio <luotasss@gmail.com>"]
+
 
 description = "A terminal user interface tool to monitor swap usage on Linux and Windows."
 readme = "README.md"
