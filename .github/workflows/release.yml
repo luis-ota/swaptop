@@ -9,6 +9,25 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  check-branch:
+    name: Check if tag is on main
+    runs-on: ubuntu-latest
+    outputs:
+      is_main: ${{ steps.check.outputs.is_main }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check tag ancestry
+        id: check
+        run: |
+          git fetch origin main
+          if git merge-base --is-ancestor HEAD origin/main; then
+            echo "is_main=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_main=false" >> $GITHUB_OUTPUT
+          fi
+
   build:
     name: Build for ${{ matrix.target_os }}
     runs-on: ubuntu-latest
@@ -159,7 +178,8 @@ jobs:
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, check-branch]
+    if: needs.check-branch.outputs.is_main == 'true'
     permissions:
       contents: write
     steps:
@@ -209,3 +229,20 @@ jobs:
             See attached assets for Linux and Windows.
           files: |
             release-assets/*/*
+
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs: [build, check-branch]
+    if: needs.check-branch.outputs.is_main == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Publish to crates.io
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
