@@ -1,3 +1,4 @@
+mod config;
 mod swap_info;
 mod theme;
 
@@ -23,6 +24,15 @@ use std::time::{Duration, Instant};
 use swap_info::{SizeUnits, get_chart_info, get_processes_using_swap};
 
 const LINUX: bool = cfg!(target_os = "linux");
+
+fn format_swap_value(value: f64) -> String {
+    let rounded = value.round();
+    if (value - rounded).abs() < 0.01 {
+        format!("{}", rounded as u64)
+    } else {
+        format!("{:.2}", value)
+    }
+}
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -52,20 +62,21 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
+        let cfg = config::load_config();
         Self {
             running: false,
-            display_devices: false,
+            display_devices: cfg.display_devices,
             vertical_scroll_state: ScrollbarState::default(),
             vertical_scroll: 0,
-            swap_size_unit: SizeUnits::KB,
+            swap_size_unit: cfg.size_unit,
             swap_processes_lines: Vec::new(),
             last_update: None,
             chart_info: SwapUpdate::default(),
-            aggregated: false,
-            current_theme: ThemeType::Dracula,
+            aggregated: cfg.aggregated,
+            current_theme: cfg.theme,
             time_window: [0.0, 60.0],
             chart_data: Vec::new(),
-            timeout: 1000,
+            timeout: cfg.timeout,
             visible_height: 0,
         }
     }
@@ -282,44 +293,54 @@ impl App {
                     self.vertical_scroll_state.position(self.vertical_scroll);
             }
 
-            // change unit
-            KeyCode::Char('k') => {
-                self.swap_size_unit = SizeUnits::KB;
-                if let Ok(info) = get_chart_info(self.swap_size_unit.clone()) {
-                    self.chart_info = info;
-                    self.swap_processes_lines = self.create_process_lines(self.aggregated);
-                }
+        // change unit
+        KeyCode::Char('k') => {
+            self.swap_size_unit = SizeUnits::KB;
+            if let Ok(info) = get_chart_info(self.swap_size_unit.clone()) {
+                self.chart_info = info;
+                self.swap_processes_lines = self.create_process_lines(self.aggregated);
             }
-            KeyCode::Char('m') => {
-                self.swap_size_unit = SizeUnits::MB;
-                if let Ok(info) = get_chart_info(self.swap_size_unit.clone()) {
-                    self.chart_info = info;
-                    self.swap_processes_lines = self.create_process_lines(self.aggregated);
-                }
+            self.save_app_config();
+        }
+        KeyCode::Char('m') => {
+            self.swap_size_unit = SizeUnits::MB;
+            if let Ok(info) = get_chart_info(self.swap_size_unit.clone()) {
+                self.chart_info = info;
+                self.swap_processes_lines = self.create_process_lines(self.aggregated);
             }
-            KeyCode::Char('g') => {
-                self.swap_size_unit = SizeUnits::GB;
-                if let Ok(info) = get_chart_info(self.swap_size_unit.clone()) {
-                    self.chart_info = info;
-                    self.swap_processes_lines = self.create_process_lines(self.aggregated);
-                }
+            self.save_app_config();
+        }
+        KeyCode::Char('g') => {
+            self.swap_size_unit = SizeUnits::GB;
+            if let Ok(info) = get_chart_info(self.swap_size_unit.clone()) {
+                self.chart_info = info;
+                self.swap_processes_lines = self.create_process_lines(self.aggregated);
             }
+            self.save_app_config();
+        }
 
-            // aggregate
-            KeyCode::Char('a') => self.aggregated = !self.aggregated,
+        // aggregate
+        KeyCode::Char('a') => {
+            self.aggregated = !self.aggregated;
+            self.save_app_config();
+        }
 
-            // change theme
-            KeyCode::Char('t') => self.cycle_theme(),
+        // change theme
+        KeyCode::Char('t') => self.cycle_theme(),
 
-            // display swap devices
-            KeyCode::Char('h') => {
-                if LINUX {
-                    self.display_devices = !self.display_devices
-                }
+        // display swap devices
+        KeyCode::Char('h') => {
+            if LINUX {
+                self.display_devices = !self.display_devices;
+                self.save_app_config();
             }
+        }
 
-            // change timeout
-            KeyCode::Left | KeyCode::Right => self.change_timout(key.code),
+        // change timeout
+        KeyCode::Left | KeyCode::Right => {
+            self.change_timout(key.code);
+            self.save_app_config();
+        }
 
             _ => {}
         }
@@ -374,44 +395,54 @@ impl App {
                     self.vertical_scroll_state.position(self.vertical_scroll);
             }
 
-            // change unit
-            KeyCode::Char('k') => {
-                self.swap_size_unit = SizeUnits::KB;
-                if let Ok(info) = get_chart_info() {
-                    self.chart_info = info;
-                    self.swap_processes_lines = self.create_process_lines(self.aggregated);
-                }
+        // change unit
+        KeyCode::Char('k') => {
+            self.swap_size_unit = SizeUnits::KB;
+            if let Ok(info) = get_chart_info() {
+                self.chart_info = info;
+                self.swap_processes_lines = self.create_process_lines(self.aggregated);
             }
-            KeyCode::Char('m') => {
-                self.swap_size_unit = SizeUnits::MB;
-                if let Ok(info) = get_chart_info() {
-                    self.chart_info = info;
-                    self.swap_processes_lines = self.create_process_lines(self.aggregated);
-                }
+            self.save_app_config();
+        }
+        KeyCode::Char('m') => {
+            self.swap_size_unit = SizeUnits::MB;
+            if let Ok(info) = get_chart_info() {
+                self.chart_info = info;
+                self.swap_processes_lines = self.create_process_lines(self.aggregated);
             }
-            KeyCode::Char('g') => {
-                self.swap_size_unit = SizeUnits::GB;
-                if let Ok(info) = get_chart_info() {
-                    self.chart_info = info;
-                    self.swap_processes_lines = self.create_process_lines(self.aggregated);
-                }
+            self.save_app_config();
+        }
+        KeyCode::Char('g') => {
+            self.swap_size_unit = SizeUnits::GB;
+            if let Ok(info) = get_chart_info() {
+                self.chart_info = info;
+                self.swap_processes_lines = self.create_process_lines(self.aggregated);
             }
+            self.save_app_config();
+        }
 
-            // aggregate
-            KeyCode::Char('a') => self.aggregated = !self.aggregated,
+        // aggregate
+        KeyCode::Char('a') => {
+            self.aggregated = !self.aggregated;
+            self.save_app_config();
+        }
 
-            // change theme
-            KeyCode::Char('t') => self.cycle_theme(),
+        // change theme
+        KeyCode::Char('t') => self.cycle_theme(),
 
-            // display swap devices
-            KeyCode::Char('h') => {
-                if LINUX {
-                    self.display_devices = !self.display_devices
-                }
+        // display swap devices
+        KeyCode::Char('h') => {
+            if LINUX {
+                self.display_devices = !self.display_devices;
+                self.save_app_config();
             }
+        }
 
-            // change timeout
-            KeyCode::Left | KeyCode::Right => self.change_timout(key.code),
+        // change timeout
+        KeyCode::Left | KeyCode::Right => {
+            self.change_timout(key.code);
+            self.save_app_config();
+        }
 
             _ => {}
         }
@@ -426,6 +457,17 @@ impl App {
             ThemeType::Nord => ThemeType::Default,
         };
         self.swap_processes_lines = self.create_process_lines(self.aggregated);
+        self.save_app_config();
+    }
+
+    fn save_app_config(&self) {
+        config::save_config(&config::AppConfig {
+            aggregated: self.aggregated,
+            size_unit: self.swap_size_unit.clone(),
+            display_devices: self.display_devices,
+            theme: self.current_theme,
+            timeout: self.timeout,
+        });
     }
 
     fn change_timout(&mut self, action: KeyCode) {
@@ -465,11 +507,8 @@ impl App {
                 processes = aggregate_processes(processes);
             }
 
-            for process in processes {
-                let mut process_size: String = format!("{:.2}", process.swap_size);
-                if let SizeUnits::KB = self.swap_size_unit {
-                    process_size = format!("{}", process.swap_size)
-                }
+        for process in processes {
+            let process_size = format_swap_value(process.swap_size);
 
                 lines.push(Line::from(vec![
                     format!("{:12}", process.pid).into(),
@@ -488,13 +527,7 @@ impl App {
         let total = convert_swap(self.chart_info.total_swap, self.swap_size_unit.clone());
         let used = convert_swap(self.chart_info.used_swap, self.swap_size_unit.clone());
 
-        let total_used_title: String = match self.swap_size_unit {
-            SizeUnits::KB => format!("total: {} | used: {}", total, used),
-            SizeUnits::MB => format!("total: {} | used: {:.2}", total.round(), used),
-            SizeUnits::GB => format!("total: {:.2} | used: {:.2}", total, used),
-        };
-
-        total_used_title
+        format!("total: {} | used: {}", format_swap_value(total), format_swap_value(used))
     }
 
     #[cfg(target_os = "linux")]
@@ -522,12 +555,12 @@ impl App {
             .iter()
             .map(|d| {
                 let src = find_mount_device(std::path::Path::new(&d.name))
-                    .unwrap_or_else(|| "RAM".into());
+                    .unwrap_or_else(|| "unknown".into());
                 src.len()
             })
             .max()
-            .unwrap_or(4)
-            .max(4);
+            .unwrap_or(7)
+            .max(7);
 
         let wide = area.width >= 80;
         let mut lines = Vec::new();
@@ -545,18 +578,12 @@ impl App {
         }
 
         for device in &self.chart_info.swap_devices {
-            let used = match self.swap_size_unit {
-                SizeUnits::KB => device.used_kb.to_string(),
-                _ => format!("{:.2}", device.used_kb),
-            };
+            let used = format_swap_value(device.used);
 
             let source = find_mount_device(std::path::Path::new(&device.name))
-                .unwrap_or_else(|| "RAM".into());
+                .unwrap_or_else(|| "unknown".into());
 
-            let total = match self.swap_size_unit {
-                SizeUnits::KB => device.size_kb.to_string(),
-                _ => format!("{:.2}", device.size_kb),
-            };
+            let total = format_swap_value(device.size);
 
             let row = if wide {
                 format!(
@@ -660,7 +687,11 @@ impl App {
             .border_style(Style::default().fg(theme.border))
             .style(Style::default().bg(theme.background))
             .title(
-                Line::from("(a to aggregate) (u/d|▲/▼|home/end|pgup/pgdown to scroll)")
+                Line::from(if self.aggregated {
+                    "(a to segregate) (u/d|▲/▼|home/end|pgup/pgdown to scroll)"
+                } else {
+                    "(a to aggregate) (u/d|▲/▼|home/end|pgup/pgdown to scroll)"
+                })
                     .fg(theme.text)
                     .right_aligned(),
             )
