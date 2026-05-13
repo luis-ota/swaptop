@@ -21,8 +21,8 @@ pub struct ProcessSwapInfo {
 pub struct InfoSwap {
     pub name: String,
     pub kind: String,
-    pub size_kb: f64,
-    pub used_kb: f64,
+    pub size: f64,
+    pub used: f64,
     pub priority: isize,
 }
 
@@ -34,7 +34,7 @@ pub struct SwapUpdate {
     pub used_swap: u64,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum SizeUnits {
     #[default]
     KB,
@@ -66,8 +66,8 @@ pub fn get_swap_devices(unit: SizeUnits) -> std::io::Result<Vec<InfoSwap>> {
         out.push(InfoSwap {
             name: s.source.to_string_lossy().into_owned(),
             kind: s.kind.to_string_lossy().into_owned(),
-            size_kb: convert_swap(s.size as u64, unit.to_owned()),
-            used_kb: convert_swap(s.used as u64, unit.to_owned()),
+            size: convert_swap(s.size as u64, unit.to_owned()),
+            used: convert_swap(s.used as u64, unit.to_owned()),
             priority: s.priority,
         });
     }
@@ -103,6 +103,16 @@ pub fn get_processes_using_swap(unit: SizeUnits) -> Result<Vec<ProcessSwapInfo>,
 
 #[cfg(target_os = "linux")]
 pub fn find_mount_device(path: &std::path::Path) -> Option<String> {
+    let path_str = path.to_string_lossy();
+
+    if path_str.starts_with("/dev/zram") {
+        return Some("RAM".to_owned());
+    }
+
+    if path_str.starts_with("/dev/") {
+        return Some(path_str.into_owned());
+    }
+
     let abs_path = path.canonicalize().ok()?;
 
     let mountinfo = procfs::process::Process::myself()
@@ -114,11 +124,11 @@ pub fn find_mount_device(path: &std::path::Path) -> Option<String> {
         .filter(|m| abs_path.starts_with(&m.mount_point))
         .max_by_key(|m| m.mount_point.components().count())?;
 
-    Some(if best_mount.fs_type == "devtmpfs" {
-        "RAM".to_owned()
-    } else {
-        best_mount.mount_source?
-    })
+    if best_mount.fs_type == "devtmpfs" {
+        return None;
+    }
+
+    best_mount.mount_source
 }
 
 #[cfg(target_os = "windows")]

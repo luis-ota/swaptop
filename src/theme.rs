@@ -1,6 +1,6 @@
 use ratatui::style::Color;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub enum ThemeType {
     #[default]
     Default,
