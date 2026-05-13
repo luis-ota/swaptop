@@ -1,6 +1,6 @@
 [package]
 name = "swaptop"
-version = "1.0.5"
+version = "1.0.6"
 edition = "2024"
 rust-version = "1.88.0"
 authors = ["Luis Otavio <luotasss@gmail.com>"]
@@ -21,6 +21,9 @@ ratatui = { version = "0.29.0", features = ["all-widgets"] }
 thiserror = "2.0.12"
 crossterm = "0.29.0"
 color-eyre = "0.6.3"
+dirs = "6"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = "0.17.0"
