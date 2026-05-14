@@ -3,6 +3,7 @@ A real-time swap usage monitor for Linux and Windows systems with TUI interface.
 
 ![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fluis-ota%2Fswaptop&label=views&icon=github&color=%23cfe2ff)
 [![Crates.io](https://img.shields.io/crates/v/swaptop.svg)](https://crates.io/crates/swaptop)
+[![Built With Ratatui](https://img.shields.io/badge/Built_With_Ratatui-000?logo=ratatui&logoColor=fff)](https://ratatui.rs/)
 
 ![Swaptop Demo](docs/swaptop.gif)
 
@@ -17,6 +18,12 @@ A real-time swap usage monitor for Linux and Windows systems with TUI interface.
 - Grouped view by software (aggregate mode)
 - Multiple color themes (Dracula, Solarized, Monokai, Nord)
 - Unit conversion (KB/MB/GB)
+- **Mouse interaction** — click buttons, drag dividers to resize panels, scroll lists
+- **Process info panel** — select a process with ↑/↓ or click, press Enter for details (PID, name, swap, exe path, state, VmPeak, VmSize, VmRSS, VmData, VmStk, threads, UID)
+- **Info sidebar** — persistent sidebar with all process details when info panel is open
+- **Panel focus system** — press `w`/`s` to cycle focus, `l`/`r` to resize the active panel's divider
+- **Help popup** — press `?` for all keyboard shortcuts
+- **Configuration persistence** — settings saved to `~/.config/swaptop/config.toml`
 - Lightweight (<5MB memory usage)
 
 ## Installation
@@ -46,21 +53,36 @@ swaptop
 
 ### Keyboard Controls
 
-| Key         | Action                       |
-|-------------|------------------------------|
-| `q`/`Esc`   | Quit application             |
-| `k`/`m`/`g` | Switch units (KB/MB/GB)      |
-| `h`         | Hide / Show swap devices     |
-| `a`         | Toggle aggregate mode        |
-| `t`         | Cycle through themes         |
-| `↑`/`u`     | Scroll up                    |
-| `↓`/`d`     | Scroll down                  |
-| `Home`      | Go to list start             |
-| `End`       | Go to list end               |
-| `PgUp`      | One page up                  |
-| `PgDown`    | One page down                |
-| `Ctrl+C`    | Force quit                   |
-| `< / >`     | Decrease / Increase interval |
+| Key              | Action                          |
+|------------------|---------------------------------|
+| `q`/`Esc`        | Quit application                |
+| `?`              | Toggle help popup               |
+| `k`/`m`/`g`      | Switch units (KB/MB/GB)         |
+| `h`              | Hide / Show swap devices        |
+| `a`              | Toggle aggregate mode           |
+| `t`              | Cycle through themes            |
+| `↑`/`u`          | Select previous process         |
+| `↓`/`d`          | Select next process             |
+| `Home`           | Go to first process             |
+| `End`            | Go to last process              |
+| `PgUp`           | One page up                     |
+| `PgDown`         | One page down                   |
+| `Enter`          | Open/close process info panel  |
+| `Ctrl+C`         | Force quit                      |
+| `←` / `→`        | Decrease / Increase interval    |
+| `w` / `s`        | Cycle focused panel             |
+| `l` / `r`        | Resize focused panel divider    |
+
+### Mouse Controls
+
+| Action                | Result                      |
+|-----------------------|-----------------------------|
+| Click KB/MB/GB        | Change unit                 |
+| Click "a to aggregate"| Toggle aggregate mode       |
+| Click `⬌` divider     | Drag to resize panels       |
+| Scroll over list      | Scroll process list         |
+| Click a process row   | Select + open info panel    |
+| Scroll over info      | Scroll info panel           |
 
 ![Swaptop unit Demo](docs/unit-ch.gif)
 

@@ -11,6 +11,9 @@ pub struct AppConfig {
     pub display_devices: bool,
     pub theme: ThemeType,
     pub timeout: u64,
+    pub devices_split_ratio: f64,
+    pub show_info_panel: bool,
+    pub info_split_ratio: f64,
 }
 
 impl Default for AppConfig {
@@ -21,6 +24,9 @@ impl Default for AppConfig {
             display_devices: false,
             theme: ThemeType::Dracula,
             timeout: 1000,
+            devices_split_ratio: 0.70,
+            show_info_panel: false,
+            info_split_ratio: 0.35,
         }
     }
 }

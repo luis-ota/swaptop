@@ -227,3 +227,35 @@ pub fn aggregate_processes(processes: Vec<ProcessSwapInfo>) -> Vec<ProcessSwapIn
     });
     aggregated_processes
 }
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Default)]
+pub struct ProcessDetail {
+    pub state: Option<String>,
+    pub exe_path: Option<String>,
+    pub vm_peak: Option<u64>,
+    pub vm_size: Option<u64>,
+    pub vm_rss: Option<u64>,
+    pub vm_data: Option<u64>,
+    pub vm_stk: Option<u64>,
+    pub threads: Option<u64>,
+    pub uid: Option<u32>,
+}
+
+#[cfg(target_os = "linux")]
+pub fn get_process_detail(pid: u32) -> Result<ProcessDetail, SwapDataError> {
+    use procfs::process::Process;
+    let proc = Process::new(pid as i32)?;
+    let status = proc.status()?;
+    Ok(ProcessDetail {
+        state: Some(status.state),
+        exe_path: proc.exe().ok().map(|p| p.to_string_lossy().into_owned()),
+        vm_peak: status.vmpeak,
+        vm_size: status.vmsize,
+        vm_rss: status.vmrss,
+        vm_data: status.vmdata,
+        vm_stk: status.vmstk,
+        threads: Some(status.threads),
+        uid: Some(status.ruid),
+    })
+}
