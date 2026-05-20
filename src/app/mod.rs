@@ -81,6 +81,7 @@ pub struct App {
     pub info_split_ratio: f64,
     pub is_info_dragging: bool,
     pub layout: AppLayout,
+    pub help_scroll: usize,
 }
 
 impl App {
@@ -116,6 +117,7 @@ impl App {
             info_split_ratio: cfg.info_split_ratio.clamp(0.15, 0.85),
             is_info_dragging: false,
             layout: AppLayout::default(),
+            help_scroll: 0,
         }
     }
 
@@ -200,11 +202,11 @@ impl App {
         let mut lines = Vec::new();
 
         lines.push(Line::from(vec![
-            format!("{:>12}", if self.aggregated { "COUNT" } else { "PID" }).bold(),
+            format!("{:>12}", if self.aggregated { "count" } else { "pid" }).bold(),
             " | ".into(),
-            format!("{:30}", "PROCESS").bold(),
+            format!("{:30}", "process").bold(),
             " | ".into(),
-            format!("{:10}", "USED").bold(),
+            format!("{:10}", "used").bold(),
         ]));
 
         self.processes_data.clear();

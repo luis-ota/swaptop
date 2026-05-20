@@ -6,7 +6,7 @@ use ratatui::layout::Rect;
 use crate::app::layout::{
     border_row_bottom, border_row_top, center_title_x, left_title_x, right_title_x,
 };
-use crate::app::{App, LINUX};
+use crate::app::{App, FocusedPanel, LINUX};
 use crate::swap_info::SizeUnits;
 
 const UNIT_LABEL_PREFIX: &str = "unit (k/m/g to change): ";
@@ -28,11 +28,30 @@ impl App {
         }
 
         if self.show_help {
-            if matches!(
-                key.code,
-                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')
-            ) {
-                self.show_help = false;
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') => {
+                    self.show_help = false;
+                    self.help_scroll = 0;
+                }
+                KeyCode::Char('d') | KeyCode::Down => {
+                    self.help_scroll = self.help_scroll.saturating_add(1);
+                }
+                KeyCode::Char('u') | KeyCode::Up => {
+                    self.help_scroll = self.help_scroll.saturating_sub(1);
+                }
+                KeyCode::PageDown => {
+                    self.help_scroll = self.help_scroll.saturating_add(10);
+                }
+                KeyCode::PageUp => {
+                    self.help_scroll = self.help_scroll.saturating_sub(10);
+                }
+                KeyCode::Home => {
+                    self.help_scroll = 0;
+                }
+                KeyCode::End => {
+                    self.help_scroll = usize::MAX;
+                }
+                _ => {}
             }
             return;
         }
@@ -71,23 +90,17 @@ impl App {
                 self.show_help = !self.show_help;
             }
 
-            KeyCode::Char('d') | KeyCode::Down => self.move_selection(1),
-            KeyCode::Char('u') | KeyCode::Up => self.move_selection(-1),
-            KeyCode::End => {
-                self.selected_index = self.swap_processes_lines.len().saturating_sub(1);
-                self.scroll_to_selection();
-            }
-            KeyCode::Home => {
-                self.selected_index = 1;
-                self.scroll_to_selection();
-            }
+            KeyCode::Char('d') | KeyCode::Down => self.scroll_focused(1),
+            KeyCode::Char('u') | KeyCode::Up => self.scroll_focused(-1),
+            KeyCode::End => self.scroll_focused_end(),
+            KeyCode::Home => self.scroll_focused_home(),
             KeyCode::PageDown => {
                 let page = self.visible_height.saturating_sub(4) as i32;
-                self.move_selection(page.max(1));
+                self.scroll_focused(page.max(1));
             }
             KeyCode::PageUp => {
                 let page = self.visible_height.saturating_sub(4) as i32;
-                self.move_selection(-page.max(1));
+                self.scroll_focused(-page.max(1));
             }
 
             KeyCode::Enter => {
@@ -109,9 +122,9 @@ impl App {
 
             KeyCode::Char('l') | KeyCode::Char('r') => {
                 let step = if key.code == KeyCode::Char('l') {
-                    0.05
-                } else {
                     -0.05
+                } else {
+                    0.05
                 };
                 let swap_vis = LINUX && self.display_devices;
                 let info_vis = self.show_info_panel;
@@ -242,6 +255,17 @@ impl App {
     }
 
     fn handle_click(&mut self, col: u16, row: u16) {
+        if self.show_help {
+            let outer = self.layout.outer;
+            let w = 62.min(outer.width.saturating_sub(4));
+            let h = 28u16.min(outer.height.saturating_sub(4));
+            let px = outer.x + (outer.width - w) / 2;
+            let py = outer.y + (outer.height - h) / 2;
+            if col < px || col >= px + w || row < py || row >= py + h {
+                self.show_help = false;
+            }
+            return;
+        }
         if self.try_click_divider(col, row) {
             return;
         }
@@ -490,26 +514,85 @@ impl App {
         false
     }
 
-    fn move_selection(&mut self, delta: i32) {
-        let max = self.swap_processes_lines.len().saturating_sub(1) as i32;
-        let new = (self.selected_index as i32 + delta).max(1).min(max);
-        self.selected_index = new as usize;
-        self.scroll_to_selection();
+    fn scroll_focused(&mut self, delta: i32) {
+        match self.focused_panel {
+            FocusedPanel::ProcessList => {
+                let max = self.swap_processes_lines.len().saturating_sub(1) as i32;
+                let new = (self.selected_index as i32 + delta).max(1).min(max);
+                self.selected_index = new as usize;
+                let inner = self.visible_height.saturating_sub(2);
+                if inner == 0 {
+                    return;
+                }
+                if self.selected_index < self.vertical_scroll {
+                    self.vertical_scroll = self.selected_index;
+                } else if self.selected_index >= self.vertical_scroll + inner {
+                    self.vertical_scroll = self.selected_index.saturating_sub(inner) + 1;
+                }
+                let max_scroll = self.swap_processes_lines.len().saturating_sub(inner);
+                self.vertical_scroll = self.vertical_scroll.min(max_scroll);
+                self.vertical_scroll_state =
+                    self.vertical_scroll_state.position(self.vertical_scroll);
+            }
+            FocusedPanel::SwapDevices => {
+                if LINUX && self.display_devices {
+                    self.swap_devices_scroll =
+                        (self.swap_devices_scroll as i32 + delta).max(0) as usize;
+                }
+            }
+            FocusedPanel::InfoPanel => {
+                if self.show_info_panel {
+                    self.info_scroll = (self.info_scroll as i32 + delta).max(0) as usize;
+                }
+            }
+        }
     }
 
-    fn scroll_to_selection(&mut self) {
-        let inner = self.visible_height.saturating_sub(2);
-        if inner == 0 {
-            return;
+    fn scroll_focused_end(&mut self) {
+        match self.focused_panel {
+            FocusedPanel::ProcessList => {
+                self.selected_index = self.swap_processes_lines.len().saturating_sub(1);
+                let inner = self.visible_height.saturating_sub(2);
+                if inner > 0 {
+                    self.vertical_scroll = self.swap_processes_lines.len().saturating_sub(inner);
+                    self.vertical_scroll_state =
+                        self.vertical_scroll_state.position(self.vertical_scroll);
+                }
+            }
+            FocusedPanel::SwapDevices => {
+                if LINUX
+                    && self.display_devices
+                    && let Some(dev_area) = self.layout.swap_devices_area
+                {
+                    let content = self.chart_info.swap_devices.len() + 2;
+                    let inner = dev_area.height.saturating_sub(2) as usize;
+                    self.swap_devices_scroll = content.saturating_sub(inner);
+                }
+            }
+            FocusedPanel::InfoPanel => {
+                if self.show_info_panel
+                    && let Some(_info_area) = self.layout.info_area
+                {
+                    self.info_scroll = 0;
+                }
+            }
         }
-        if self.selected_index < self.vertical_scroll {
-            self.vertical_scroll = self.selected_index;
-        } else if self.selected_index >= self.vertical_scroll + inner {
-            self.vertical_scroll = self.selected_index.saturating_sub(inner) + 1;
+    }
+
+    fn scroll_focused_home(&mut self) {
+        match self.focused_panel {
+            FocusedPanel::ProcessList => {
+                self.selected_index = 1;
+                self.vertical_scroll = 0;
+                self.vertical_scroll_state = self.vertical_scroll_state.position(0);
+            }
+            FocusedPanel::SwapDevices => {
+                self.swap_devices_scroll = 0;
+            }
+            FocusedPanel::InfoPanel => {
+                self.info_scroll = 0;
+            }
         }
-        let max_scroll = self.swap_processes_lines.len().saturating_sub(inner);
-        self.vertical_scroll = self.vertical_scroll.min(max_scroll);
-        self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
     }
 
     fn process_list_area(&self) -> Rect {

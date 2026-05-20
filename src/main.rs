@@ -5,41 +5,41 @@ mod theme;
 
 use color_eyre::Result;
 
-const HELP: &str = r#"swaptop - Real-time swap usage monitor TUI
+const HELP: &str = r#"swaptop - real-time swap usage monitor tui
 
-USAGE:
-    swaptop [FLAGS]
+usage:
+  swaptop [flags]
 
-FLAGS:
-    -h, --help       Prints this help information
-    -v, --version    Prints version information
+flags:
+  -h, --help       prints this help information
+  -v, --version    prints version information
 
-KEYBOARD SHORTCUTS:
-    General:
-        q / Esc          Quit
-        ?                Toggle help popup
+keyboard shortcuts:
+  general:
+    q / esc         quit
+    ?               toggle help popup
 
-    Navigation:
-        ↑/↓ or u/d       Move selection
-        PgUp/PgDn         Page up/down
-        Home/End          First/last process
-        Enter / click     Open/close info panel
+  navigation:
+    ↑/↓ or u/d     move selection
+    PgUp/PgDn      page up/down
+    Home/End        first/last process
+    Enter / click   open/close info panel
 
-    Actions:
-        a                Toggle aggregate mode
-        t                Cycle theme
-        h                Show/hide swap devices
-        k / m / g        Unit: KB / MB / GB
-        ← / →            Adjust refresh timeout
+  actions:
+    a               toggle aggregate mode
+    t               cycle theme
+    h               show/hide swap devices
+    k / m / g       unit: KB / MB / GB
+    ← / →           adjust refresh timeout
 
-    Panels:
-        Tab / Shift+Tab  Cycle focused panel
-        l / r            Resize focused panel divider
+  panels:
+    Tab / Shift+Tab cycle focused panel
+    l / r           resize focused panel divider
 
-    Mouse:
-        Click ⬌          Drag to resize divider
-        Scroll            Scroll active panel
-        Click process     Select + open info panel
+  mouse:
+    click ⬌         drag to resize divider
+    scroll          scroll active panel
+    click process   select + open info panel
 "#;
 
 fn main() -> Result<()> {

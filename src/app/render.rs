@@ -20,9 +20,17 @@ use crate::theme::Theme;
 impl App {
     fn panel_border(&self, panel: FocusedPanel, theme: &Theme) -> ratatui::style::Color {
         if self.focused_panel == panel {
-            theme.primary
+            theme.focus_border
         } else {
             theme.border
+        }
+    }
+
+    fn panel_border_type(&self, panel: FocusedPanel) -> BorderType {
+        if self.focused_panel == panel {
+            BorderType::Double
+        } else {
+            BorderType::Rounded
         }
     }
 
@@ -92,7 +100,12 @@ impl App {
 
             #[cfg(target_os = "linux")]
             self.render_swap_devices(frame, upper_chunks[0], &theme);
-            self.render_divider(frame, upper_chunks[1], &theme);
+            self.render_divider(
+                frame,
+                upper_chunks[1],
+                &theme,
+                self.focused_panel == FocusedPanel::SwapDevices,
+            );
             self.render_animated_chart(frame, upper_chunks[2], &theme);
         } else {
             layout.chart_area = chunks[0];
@@ -112,16 +125,16 @@ impl App {
         }
     }
 
-    fn render_divider(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+    fn render_divider(&self, frame: &mut Frame, area: Rect, theme: &Theme, show_lr: bool) {
         let h = area.height as usize;
         let mut lines: Vec<&str> = Vec::with_capacity(h);
         let (l_row, mid, r_row) = (h / 4, h / 2, 3 * h / 4);
         for i in 0..h {
             let ch = if i == mid {
                 "⬌"
-            } else if i == l_row && h >= 6 {
+            } else if show_lr && i == l_row && h >= 6 {
                 "l"
-            } else if i == r_row && h >= 6 {
+            } else if show_lr && i == r_row && h >= 6 {
                 "r"
             } else {
                 "┃"
@@ -282,15 +295,11 @@ impl App {
         }
 
         let block = Block::bordered()
-            .border_type(BorderType::Rounded)
+            .border_type(self.panel_border_type(FocusedPanel::SwapDevices))
             .border_style(Style::default().fg(self.panel_border(FocusedPanel::SwapDevices, theme)))
             .style(Style::default().bg(theme.background))
             .title(total_n_used_line)
-            .title(
-                Line::from("swap devices")
-                .fg(theme.text)
-                .left_aligned(),
-            )
+            .title(Line::from("swap devices").fg(theme.text).left_aligned())
             .title_bottom(Line::from("(h to hide swap devices)").left_aligned());
 
         let dev_content_height = lines.len() + 2;
@@ -404,7 +413,13 @@ impl App {
             self.render_info_sidebar(frame, info_area, theme);
             if let Some(dx) = self.layout.info_divider_x {
                 let div = Rect::new(dx, area.y, 1, area.height);
-                self.render_divider(frame, div, theme);
+                self.render_divider(
+                    frame,
+                    div,
+                    theme,
+                    self.focused_panel == FocusedPanel::ProcessList
+                        || self.focused_panel == FocusedPanel::InfoPanel,
+                );
             }
         }
 
@@ -425,7 +440,7 @@ impl App {
             .position(self.vertical_scroll);
 
         let bottom_block = Block::bordered()
-            .border_type(BorderType::Rounded)
+            .border_type(self.panel_border_type(FocusedPanel::ProcessList))
             .border_style(Style::default().fg(self.panel_border(FocusedPanel::ProcessList, theme)))
             .style(Style::default().bg(theme.background))
             .title(
@@ -438,13 +453,10 @@ impl App {
                 .right_aligned(),
             )
             .title(
-                Line::from(format!(
-                    "unit (k/m/g to change): {}",
-                    unit_buttons,
-                ))
-                .fg(theme.secondary)
-                .bold()
-                .left_aligned(),
+                Line::from(format!("unit (k/m/g to change): {}", unit_buttons,))
+                    .fg(theme.secondary)
+                    .bold()
+                    .left_aligned(),
             )
             .title_bottom(Line::from("↑/↓ select  Enter info  ? help").fg(theme.text));
 
@@ -452,29 +464,29 @@ impl App {
         if self.selected_index > 0
             && let Some(line) = display_lines.get_mut(self.selected_index)
         {
-            let hl_off = Style::default()
+            let hl_style = Style::default()
                 .bg(theme.highlight)
+                .fg(ratatui::style::Color::White)
                 .add_modifier(ratatui::style::Modifier::BOLD);
-            let is_left = self.show_info_panel;
-            let pad = if is_left {
-                proc_area.width.saturating_sub(line.width() as u16) as usize
-            } else {
-                0
-            };
-            *line = std::mem::take(line).style(hl_off);
+            for span in line.spans.iter_mut() {
+                span.style = hl_style;
+            }
+            let inner_width = proc_area.width.saturating_sub(2) as usize;
+            let pad = inner_width.saturating_sub(line.width());
             if pad > 0 {
-                let hl_pad = Style::default().bg(theme.primary);
                 line.spans
-                    .push(ratatui::text::Span::raw(" ".repeat(pad)).style(hl_pad));
+                    .push(ratatui::text::Span::raw(" ".repeat(pad)).style(hl_style));
             }
         }
 
+        let alignment = if self.show_info_panel {
+            Alignment::Left
+        } else {
+            Alignment::Center
+        };
+
         let process_paragraph = Paragraph::new(display_lines)
-            .alignment(if self.show_info_panel {
-                Alignment::Left
-            } else {
-                Alignment::Center
-            })
+            .alignment(alignment)
             .block(bottom_block)
             .scroll((self.vertical_scroll as u16, 0));
 
@@ -508,7 +520,7 @@ impl App {
             format!("{} {}", super::format_swap_value(val), unit_label)
         };
 
-        let pid_label = if self.aggregated { "COUNT" } else { "PID" };
+        let pid_label = if self.aggregated { "count" } else { "pid" };
         let swap_str = format!(
             "{} {}",
             super::format_swap_value(proc.swap_size),
@@ -516,9 +528,9 @@ impl App {
         );
 
         let mut info = vec![
-            format!("{}:    {}", pid_label, proc.pid),
-            format!("Name:  {}", proc.name),
-            format!("Swap:  {}", swap_str),
+            format!("{}: {}", pid_label, proc.pid),
+            format!("name: {}", proc.name),
+            format!("swap: {}", swap_str),
         ];
 
         #[cfg(target_os = "linux")]
@@ -526,31 +538,31 @@ impl App {
             && let Ok(detail) = crate::swap_info::get_process_detail(proc.pid)
         {
             if let Some(ref path) = detail.exe_path {
-                info.push(format!("Exe:   {}", path));
+                info.push(format!("exe: {}", path));
             }
             if let Some(state) = detail.state {
-                info.push(format!("State: {}", state));
+                info.push(format!("state: {}", state));
             }
             if let Some(v) = detail.vm_peak {
-                info.push(format!("VmPeak: {}", fmt_kb(v)));
+                info.push(format!("vmpeak: {}", fmt_kb(v)));
             }
             if let Some(v) = detail.vm_size {
-                info.push(format!("VmSize: {}", fmt_kb(v)));
+                info.push(format!("vmsize: {}", fmt_kb(v)));
             }
             if let Some(v) = detail.vm_rss {
-                info.push(format!("VmRSS:  {}", fmt_kb(v)));
+                info.push(format!("vmrss: {}", fmt_kb(v)));
             }
             if let Some(v) = detail.vm_data {
-                info.push(format!("VmData: {}", fmt_kb(v)));
+                info.push(format!("vmdata: {}", fmt_kb(v)));
             }
             if let Some(v) = detail.vm_stk {
-                info.push(format!("VmStk:  {}", fmt_kb(v)));
+                info.push(format!("vmstk: {}", fmt_kb(v)));
             }
             if let Some(n) = detail.threads {
-                info.push(format!("Threads: {}", n));
+                info.push(format!("threads: {}", n));
             }
             if let Some(u) = detail.uid {
-                info.push(format!("Uid:    {}", u));
+                info.push(format!("uid: {}", u));
             }
         }
 
@@ -565,9 +577,9 @@ impl App {
         });
 
         let block = Block::bordered()
-            .border_type(BorderType::Rounded)
+            .border_type(self.panel_border_type(FocusedPanel::InfoPanel))
             .border_style(Style::default().fg(self.panel_border(FocusedPanel::InfoPanel, theme)))
-            .title(" Info ")
+            .title(" info ")
             .style(Style::default().bg(theme.background).fg(theme.text));
 
         let para = Paragraph::new(lines)
@@ -592,39 +604,34 @@ impl App {
         }
     }
 
-    fn render_help_popup(&self, frame: &mut Frame, theme: &Theme) {
+    fn render_help_popup(&mut self, frame: &mut Frame, theme: &Theme) {
         let outer = frame.area();
-        let w = 62.min(outer.width.saturating_sub(4));
-        let h = 28u16.min(outer.height.saturating_sub(4));
-        let x = outer.x + (outer.width - w) / 2;
-        let y = outer.y + (outer.height - h) / 2;
-
         let shortcuts = vec![
-            ("General", ""),
-            ("q / Ctrl+C / Esc", "Quit"),
-            ("?", "Toggle this help"),
+            ("general", ""),
+            ("q / ctrl+c / esc", "quit"),
+            ("?", "toggle this help"),
             ("", ""),
-            ("Navigation", ""),
-            ("↑/↓ or u/d", "Move selection"),
-            ("PgUp/PgDn", "Page up/down"),
-            ("Home/End", "First/last process"),
-            ("Enter / click", "Open/close info panel"),
+            ("navigation", ""),
+            ("↑/↓ or u/d", "move selection"),
+            ("PgUp/PgDn", "page up/down"),
+            ("Home/End", "first/last process"),
+            ("Enter / click", "open/close info panel"),
             ("", ""),
-            ("Actions", ""),
-            ("a", "Toggle aggregate"),
-            ("t", "Cycle theme"),
-            ("h", "Show/hide swap devices"),
-            ("k / m / g", "Unit: KB / MB / GB"),
-            ("← / →", "Adjust refresh timeout"),
+            ("actions", ""),
+            ("a", "toggle aggregate"),
+            ("t", "cycle theme"),
+            ("h", "show/hide swap devices"),
+            ("k / m / g", "unit: KB / MB / GB"),
+            ("← / →", "adjust refresh timeout"),
             ("", ""),
-            ("Panels", ""),
-            ("Tab / Shift+Tab", "Cycle focused panel"),
-            ("l / r", "Resize focused panel divider"),
+            ("panels", ""),
+            ("Tab / Shift+Tab", "cycle focused panel"),
+            ("l / r", "resize focused panel divider"),
             ("", ""),
-            ("Mouse", ""),
-            ("Click on ⬌", "Drag to resize divider"),
-            ("Scroll", "Scroll active panel"),
-            ("Click process", "Select + open info"),
+            ("mouse", ""),
+            ("Click on ⬌", "drag to resize divider"),
+            ("Scroll", "scroll active panel"),
+            ("Click process", "select + open info"),
         ];
 
         let lines: Vec<Line> = shortcuts
@@ -644,17 +651,50 @@ impl App {
             })
             .collect();
 
+        let content_height = lines.len() + 2;
+        let max_h = outer.height.saturating_sub(4);
+        let h = max_h.min(content_height as u16);
+        let w = 62.min(outer.width.saturating_sub(4));
+        let x = outer.x + (outer.width - w) / 2;
+        let y = outer.y + (outer.height - h) / 2;
+
+        let overflow = content_height > h as usize;
+        let scroll_max = if overflow {
+            content_height.saturating_sub(h as usize)
+        } else {
+            0
+        };
+        self.help_scroll = self.help_scroll.min(scroll_max);
+
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.primary))
-            .title(" Keyboard Shortcuts ")
+            .title(" keyboard shortcuts ")
             .style(Style::default().bg(theme.background).fg(theme.text));
 
         let para = Paragraph::new(lines)
             .block(block)
-            .alignment(Alignment::Left);
+            .alignment(Alignment::Left)
+            .scroll((self.help_scroll as u16, 0));
+
         let area = Rect::new(x, y, w, h);
         frame.render_widget(Clear, area);
         frame.render_widget(para, area);
+
+        if overflow {
+            let state =
+                ratatui::widgets::ScrollbarState::new(content_height).position(self.help_scroll);
+            frame.render_stateful_widget(
+                ratatui::widgets::Scrollbar::new(
+                    ratatui::widgets::ScrollbarOrientation::VerticalRight,
+                )
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓"))
+                .style(Style::default().fg(theme.scrollbar))
+                .thumb_style(Style::default().fg(theme.primary)),
+                area,
+                &mut state.clone(),
+            );
+        }
     }
 }
