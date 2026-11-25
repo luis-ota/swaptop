@@ -11,7 +11,7 @@ env:
 jobs:
   check-branch:
     name: Check if tag is on main
-    runs-on: ubuntu-latest
+    runs-on: instabox-medium
     outputs:
       is_main: ${{ steps.check.outputs.is_main }}
     steps:
@@ -30,7 +30,7 @@ jobs:
 
   build:
     name: Build for ${{ matrix.target_os }}
-    runs-on: ubuntu-latest
+    runs-on: instabox-medium
     strategy:
       matrix:
         include:
@@ -177,7 +177,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: instabox-medium
     needs: [build, publish, check-branch]
     if: needs.check-branch.outputs.is_main == 'true'
     permissions:
@@ -232,7 +232,7 @@ jobs:
 
   publish:
     name: Publish to crates.io
-    runs-on: ubuntu-latest
+    runs-on: instabox-medium
     needs: [build, check-branch]
     if: needs.check-branch.outputs.is_main == 'true'
     steps:
