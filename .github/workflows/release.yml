@@ -11,7 +11,7 @@ env:
 jobs:
   build:
     name: Build for ${{ matrix.target_os }}
-    runs-on: ubuntu-latest
+    runs-on: instabox-medium
     strategy:
       matrix:
         include:
@@ -158,7 +158,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: instabox-medium
     needs: build
     permissions:
       contents: write
